@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  venue-hotel:
+    build: .
+    container_name: venue-hotel
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data          # SQLite database persistence
+      - ./uploads:/app/public/uploads  # Uploaded photos persistence
+    environment:
+      - DATABASE_URL=file:/app/data/hotel.db
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

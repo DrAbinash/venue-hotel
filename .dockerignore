@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+*.log
+.env*
+db/
+.zscripts
+.z-ai-config
+skills/
+download/
+upload/
+examples/
+test
+.claude
