@@ -1,21 +1,31 @@
-version: "3.8"
-
 services:
   venue-hotel:
     build: .
+    image: venue-hotel:latest
     container_name: venue-hotel
     restart: unless-stopped
     ports:
       - "3005:3000"
-    volumes:
-      - ./data:/app/data          # SQLite database persistence
-      - ./uploads:/app/public/uploads  # Uploaded photos persistence
     environment:
-      - DATABASE_URL=file:/app/data/hotel.db
       - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/hotel.db
+    volumes:
+      - venue-hotel-data:/app/data
+      - venue-hotel-uploads:/app/public/uploads
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3005/"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  venue-hotel-data:
+    name: venue-hotel-data
+  venue-hotel-uploads:
+    name: venue-hotel-uploads

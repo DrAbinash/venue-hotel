@@ -1,50 +1,60 @@
-FROM node:20-alpine AS base
+# ============================================================================
+#  Dockerfile — The Venue Hotel (Next.js standalone)
+#  Optimised for Synology Container Manager.
+#  Uses npm instead of bun for Prisma compatibility in Docker.
+# ============================================================================
 
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
+# ---------- Stage 1: deps ----------
+FROM node:20-slim AS deps
 WORKDIR /app
+COPY package.json package-lock.json* bun.lock* ./
+COPY prisma ./prisma
+RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
-COPY package.json bun.lock ./
-RUN npm install -g bun
-RUN bun install --frozen-lockfile
-
-# Build stage
-FROM base AS builder
+# ---------- Stage 2: builder ----------
+FROM node:20-slim AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
-
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
 ENV DATABASE_URL="file:/app/data/hotel.db"
 
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 RUN npx prisma generate
-RUN bun run build
+RUN npm run build
 
-# Production stage
-FROM base AS runner
+# ---------- Stage 3: runner ----------
+FROM node:20-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV DATABASE_URL="file:/app/data/hotel.db"
 ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
+ENV HOSTNAME=0.0.0.0
+ENV DATABASE_URL="file:/app/data/hotel.db"
 
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy standalone output
-COPY --from=builder /app/public ./public
+RUN addgroup --system --gid 1001 nodejs \
+    && adduser --system --uid 1001 nextjs
+
+RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
+RUN mkdir -p /app/public/uploads && chown -R nextjs:nodejs /app/public/uploads
+
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
-RUN mkdir -p /app/public/uploads && chown nextjs:nodejs /app/public/uploads
+# Prisma — needed for db push on startup
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 USER nextjs
-
 EXPOSE 3000
-
-CMD ["node", "server.js"]
+CMD ["./docker-entrypoint.sh"]
