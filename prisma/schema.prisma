@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model HotelSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Floor {
+  id          String   @id @default(cuid())
+  name        String
+  number      Int      @unique
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  rooms       Room[]
+}
+
+model Room {
+  id          String   @id @default(cuid())
+  name        String
+  roomNumber  String   @unique
+  floorId     String
+  floor       Floor    @relation(fields: [floorId], references: [id])
+  type        String   @default("Standard")
+  basePrice   Float
+  maxGuests   Int      @default(2)
+  bedType     String?
+  size        String?
+  description String
+  amenities   String   @default("[]")
+  images      String   @default("[]")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  bookings    Booking[]
+}
+
+model Booking {
+  id             String   @id @default(cuid())
+  bookingRef     String   @unique
+  roomId         String?
+  room           Room?    @relation(fields: [roomId], references: [id])
+  guestName      String
+  guestEmail     String
+  guestPhone     String
+  checkIn        DateTime
+  checkOut       DateTime
+  adults         Int      @default(1)
+  children       Int      @default(0)
+  roomType       String
+  totalAmount    Float
+  status         String   @default("pending")
+  specialRequests String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model GalleryImage {
+  id        String   @id @default(cuid())
+  category  String   @default("general")
+  url       String
+  caption   String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
