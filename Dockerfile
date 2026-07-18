@@ -1,7 +1,6 @@
 # ============================================================================
 #  Dockerfile — The Venue Hotel (Next.js standalone)
 #  Optimised for Synology Container Manager.
-#  Uses npm instead of bun for Prisma compatibility in Docker.
 # ============================================================================
 
 # ---------- Stage 1: deps ----------
@@ -47,10 +46,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Prisma — needed for db push on startup
+# Prisma client + CLI (needed for db push on startup)
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+
+# Seed script
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/docker-seed.js /app/docker-seed.js
 
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
