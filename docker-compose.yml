@@ -9,9 +9,24 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/hotel.db
+      - UPLOAD_DIR=/app/data/uploads
+      # Change this before exposing the site, and keep it out of version control.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-venue-admin}
+      # Keeps admin sessions alive across restarts.
+      - ADMIN_SESSION_SECRET=${ADMIN_SESSION_SECRET:-}
+      # Needed to build payment return URLs behind a proxy or custom domain.
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-}
+      # Optional: gateway credentials can also be entered in Admin → Payments.
+      - RAZORPAY_KEY_ID=${RAZORPAY_KEY_ID:-}
+      - RAZORPAY_KEY_SECRET=${RAZORPAY_KEY_SECRET:-}
+      - RAZORPAY_WEBHOOK_SECRET=${RAZORPAY_WEBHOOK_SECRET:-}
+      - ICICI_MERCHANT_ID=${ICICI_MERCHANT_ID:-}
+      - ICICI_SUB_MERCHANT_ID=${ICICI_SUB_MERCHANT_ID:-}
+      - ICICI_ENCRYPTION_KEY=${ICICI_ENCRYPTION_KEY:-}
     volumes:
+      # The database and the uploaded images share one volume so a single
+      # backup captures the whole site.
       - venue-hotel-data:/app/data
-      - venue-hotel-uploads:/app/public/uploads
     healthcheck:
       test: ["CMD-SHELL", "node -e \"try { require('http').get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 5000); } catch(e) { process.exit(1); }\""]
       interval: 30s
@@ -27,5 +42,3 @@ services:
 volumes:
   venue-hotel-data:
     name: venue-hotel-data
-  venue-hotel-uploads:
-    name: venue-hotel-uploads

@@ -11,7 +11,8 @@ export function useIsMobile() {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     }
     mql.addEventListener("change", onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    // Sync once on mount in case the viewport changed before this ran.
+    queueMicrotask(onChange)
     return () => mql.removeEventListener("change", onChange)
   }, [])
 

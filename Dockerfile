@@ -31,6 +31,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV DATABASE_URL="file:/app/data/hotel.db"
+# Uploaded images live on a volume and are served through /api/media.
+ENV UPLOAD_DIR="/app/data/uploads"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl \
@@ -39,7 +41,7 @@ RUN apt-get update \
 # Create user with specific UID/GID that matches Synology's Docker volume permissions
 # Synology volumes are typically owned by root, so we keep the container running as root
 # to avoid permission issues with mounted volumes
-RUN mkdir -p /app/data /app/public/uploads
+RUN mkdir -p /app/data /app/data/uploads
 
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
@@ -50,12 +52,6 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-
-# Seed script
-COPY --from=builder /app/scripts/docker-seed.js /app/docker-seed.js
-
-# Also copy node_modules needed by the seed script (uuid etc.)
-COPY --from=builder /app/node_modules/uuid ./node_modules/uuid 2>/dev/null || true
 
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
