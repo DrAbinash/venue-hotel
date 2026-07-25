@@ -1,152 +1,170 @@
 'use client';
 
-import { useHotelStore } from '@/lib/store';
-import { MapPin, Phone, Mail, Clock, Send } from 'lucide-react';
+import { useState } from 'react';
+import { Clock, Mail, MapPin, MessageCircle, Phone, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { motion } from 'framer-motion';
-import { useState } from 'react';
-import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
+import { useHotelStore } from '@/lib/store';
+import { text } from '@/lib/content';
 
 export default function ContactSection() {
   const { settings } = useHotelStore();
-  const { toast } = useToast();
-  const [form, setForm] = useState({ name: '', email: '', phone: '', message: '' });
-  const [sending, setSending] = useState(false);
+  const [form, setForm] = useState({ name: '', email: '', subject: '', message: '' });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.name || !form.email || !form.message) {
-      toast({ title: 'Please fill in all required fields', variant: 'destructive' });
-      return;
-    }
-    setSending(true);
-    await new Promise((r) => setTimeout(r, 1000));
-    toast({ title: 'Message sent successfully!', description: 'We will get back to you shortly.' });
-    setForm({ name: '', email: '', phone: '', message: '' });
-    setSending(false);
+  const address = [
+    text(settings, 'address'),
+    [text(settings, 'city'), text(settings, 'state'), text(settings, 'postalCode')].filter(Boolean).join(', '),
+    text(settings, 'country'),
+  ].filter(Boolean);
+
+  const whatsapp = text(settings, 'whatsapp', '').replace(/\D/g, '');
+  const mapUrl = text(settings, 'mapEmbedUrl', '');
+
+  /**
+   * Enquiries open the guest's own mail client. There is no outbound mail
+   * service configured, and silently dropping a message would be worse than
+   * handing it to something that definitely sends.
+   */
+  const sendEnquiry = (event: React.FormEvent) => {
+    event.preventDefault();
+    const to = text(settings, 'email');
+    const subject = encodeURIComponent(form.subject || `Enquiry from ${form.name}`);
+    const body = encodeURIComponent(`${form.message}\n\n—\n${form.name}\n${form.email}`);
+    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
   };
 
-  const contactInfo = [
-    { icon: <MapPin className="w-5 h-5" />, label: 'Address', value: settings.address || '42 Heritage Lane, City Center' },
-    { icon: <Phone className="w-5 h-5" />, label: 'Phone', value: settings.phone || '+1 (555) 234-5678' },
-    { icon: <Mail className="w-5 h-5" />, label: 'Email', value: settings.email || 'reservations@thevenue.com' },
-    { icon: <Clock className="w-5 h-5" />, label: 'Check-in / Check-out', value: `${settings.checkInTime || '14:00'} / ${settings.checkOutTime || '11:00'}` },
-  ];
-
   return (
-    <section className="py-20 md:py-28 charcoal-bg text-white">
+    <section className="py-20 md:py-28 bg-white">
       <div className="max-w-7xl mx-auto px-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="text-center mb-16"
-        >
-          <p className="text-xs tracking-[0.5em] uppercase mb-3" style={{ color: '#c9a96e' }}>
-            Get in Touch
-          </p>
-          <h2 className="text-3xl md:text-5xl font-extralight tracking-wide mb-4">
-            Contact Us
-          </h2>
-          <div className="w-16 h-[1px] bg-gold mx-auto mb-6" />
-          <p className="text-white/60 max-w-2xl mx-auto leading-relaxed">
-            Whether you have a question about reservations, events, or special requests,
-            our team is here to assist you every step of the way.
-          </p>
-        </motion.div>
+        <div className="text-center mb-14">
+          <p className="text-xs tracking-[0.5em] uppercase mb-3 text-gold">{text(settings, 'contactEyebrow')}</p>
+          <h2 className="text-3xl md:text-5xl font-extralight tracking-wide text-charcoal">{text(settings, 'contactTitle')}</h2>
+          <div className="w-16 h-[1px] bg-gold mx-auto my-6" />
+          <p className="text-muted-foreground max-w-2xl mx-auto">{text(settings, 'contactSubtitle')}</p>
+        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
-          {/* Contact Info */}
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-          >
-            <h3 className="text-xl font-light tracking-wider mb-8" style={{ color: '#c9a96e' }}>
-              {settings.hotelName || 'The Venue'}
-            </h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <div className="space-y-8">
             <div className="space-y-6">
-              {contactInfo.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-4">
-                  <div className="flex-shrink-0 w-12 h-12 border border-gold/30 flex items-center justify-center text-gold">
-                    {item.icon}
-                  </div>
-                  <div>
-                    <p className="text-xs tracking-widest uppercase text-white/50 mb-1">{item.label}</p>
-                    <p className="text-white/90">{item.value}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-10 p-6 border border-gold/20">
-              <p className="text-xs tracking-widest uppercase mb-3" style={{ color: '#c9a96e' }}>Location</p>
-              <div className="w-full h-48 bg-charcoal-light flex items-center justify-center text-white/30 text-sm">
-                Map Placeholder
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Contact Form */}
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            whileInView={{ opacity: 1, x: 0 }}
-            viewport={{ once: true }}
-          >
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div className="space-y-2">
-                  <Label className="text-xs tracking-widest uppercase text-white/60">Full Name *</Label>
-                  <Input
-                    value={form.name}
-                    onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    placeholder="John Doe"
-                    className="bg-charcoal-light border-gold/20 text-white placeholder:text-white/30 rounded-none h-11 focus:border-gold"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="text-xs tracking-widest uppercase text-white/60">Email *</Label>
-                  <Input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    placeholder="john@example.com"
-                    className="bg-charcoal-light border-gold/20 text-white placeholder:text-white/30 rounded-none h-11 focus:border-gold"
-                  />
+              <div className="flex items-start gap-4">
+                <MapPin className="w-5 h-5 text-gold flex-shrink-0 mt-1" />
+                <div>
+                  <p className="text-xs tracking-widest uppercase text-muted-foreground mb-1">Address</p>
+                  {address.map((line) => (
+                    <p key={line} className="text-charcoal/80">{line}</p>
+                  ))}
                 </div>
               </div>
+
+              <div className="flex items-start gap-4">
+                <Phone className="w-5 h-5 text-gold flex-shrink-0 mt-1" />
+                <div>
+                  <p className="text-xs tracking-widest uppercase text-muted-foreground mb-1">Telephone</p>
+                  <a href={`tel:${text(settings, 'phone')}`} className="block text-charcoal/80 hover:text-gold transition-colors">
+                    {text(settings, 'phone')}
+                  </a>
+                  {text(settings, 'phoneAlt', '') && (
+                    <a href={`tel:${text(settings, 'phoneAlt')}`} className="block text-charcoal/80 hover:text-gold transition-colors">
+                      {text(settings, 'phoneAlt')} (reservations)
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <Mail className="w-5 h-5 text-gold flex-shrink-0 mt-1" />
+                <div>
+                  <p className="text-xs tracking-widest uppercase text-muted-foreground mb-1">Email</p>
+                  <a href={`mailto:${text(settings, 'email')}`} className="block text-charcoal/80 hover:text-gold transition-colors">
+                    {text(settings, 'email')}
+                  </a>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-4">
+                <Clock className="w-5 h-5 text-gold flex-shrink-0 mt-1" />
+                <div>
+                  <p className="text-xs tracking-widest uppercase text-muted-foreground mb-1">Check-in / Check-out</p>
+                  <p className="text-charcoal/80">
+                    From {text(settings, 'checkInTime')} · until {text(settings, 'checkOutTime')}
+                  </p>
+                </div>
+              </div>
+
+              {whatsapp && (
+                <a
+                  href={`https://wa.me/${whatsapp}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm text-gold hover:text-gold-dark transition-colors"
+                >
+                  <MessageCircle className="w-4 h-4" /> Message us on WhatsApp
+                </a>
+              )}
+            </div>
+
+            {mapUrl && (
+              <div className="aspect-[4/3] border border-gold/15">
+                <iframe
+                  src={mapUrl}
+                  title="Hotel location"
+                  className="w-full h-full"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              </div>
+            )}
+          </div>
+
+          <form onSubmit={sendEnquiry} className="bg-cream/40 border border-gold/10 p-6 md:p-8 space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <div className="space-y-2">
-                <Label className="text-xs tracking-widest uppercase text-white/60">Phone</Label>
+                <Label className="text-xs tracking-widest uppercase text-muted-foreground">Name</Label>
                 <Input
-                  value={form.phone}
-                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  placeholder="+1 (555) 000-0000"
-                  className="bg-charcoal-light border-gold/20 text-white placeholder:text-white/30 rounded-none h-11 focus:border-gold"
+                  required
+                  value={form.name}
+                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                  className="h-11 border-gold/20 bg-white rounded-none focus:border-gold"
                 />
               </div>
               <div className="space-y-2">
-                <Label className="text-xs tracking-widest uppercase text-white/60">Message *</Label>
-                <Textarea
-                  value={form.message}
-                  onChange={(e) => setForm({ ...form, message: e.target.value })}
-                  placeholder="How can we help you?"
-                  rows={5}
-                  className="bg-charcoal-light border-gold/20 text-white placeholder:text-white/30 rounded-none focus:border-gold resize-none"
+                <Label className="text-xs tracking-widest uppercase text-muted-foreground">Email</Label>
+                <Input
+                  required
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm({ ...form, email: event.target.value })}
+                  className="h-11 border-gold/20 bg-white rounded-none focus:border-gold"
                 />
               </div>
-              <Button
-                type="submit"
-                disabled={sending}
-                className="w-full bg-gold hover:bg-gold-dark text-white text-xs tracking-widest uppercase h-12 rounded-none transition-all"
-              >
-                {sending ? 'Sending...' : 'Send Message'}
-                <Send className="w-4 h-4 ml-2" />
-              </Button>
-            </form>
-          </motion.div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-widest uppercase text-muted-foreground">Subject</Label>
+              <Input
+                value={form.subject}
+                onChange={(event) => setForm({ ...form, subject: event.target.value })}
+                className="h-11 border-gold/20 bg-white rounded-none focus:border-gold"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs tracking-widest uppercase text-muted-foreground">Message</Label>
+              <Textarea
+                required
+                rows={5}
+                value={form.message}
+                onChange={(event) => setForm({ ...form, message: event.target.value })}
+                className="border-gold/20 bg-white rounded-none focus:border-gold resize-none"
+              />
+            </div>
+            <Button
+              type="submit"
+              className="w-full bg-gold hover:bg-gold-dark text-white text-xs tracking-[0.3em] uppercase py-5 rounded-none"
+            >
+              <Send className="w-4 h-4 mr-2" /> Send Enquiry
+            </Button>
+          </form>
         </div>
       </div>
     </section>

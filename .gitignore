@@ -55,3 +55,5 @@ server.log
 # Synology metadata
 @eaDir/
 **/@eaDir/
+# Runtime uploads (served from /api/media)
+/public/uploads/
