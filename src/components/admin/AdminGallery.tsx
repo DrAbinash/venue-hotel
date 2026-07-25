@@ -1,168 +1,253 @@
 'use client';
 
-import { useHotelStore } from '@/lib/store';
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Upload, X, Save, GripVertical } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Loader2, Pencil, Plus, Trash2, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { useHotelStore } from '@/lib/store';
+import { list } from '@/lib/content';
+import ImageField from '@/components/admin/ImageField';
 import type { GalleryImage } from '@/lib/types';
 
-const categories = ['general', 'rooms', 'dining', 'amenities', 'exterior', 'events'];
-
 export default function AdminGallery() {
-  const { gallery, setGallery } = useHotelStore();
   const { toast } = useToast();
-  const [editing, setEditing] = useState<Partial<GalleryImage> | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [filter, setFilter] = useState('all');
-  const [uploading, setUploading] = useState(false);
+  const { gallery, setGallery, settings } = useHotelStore();
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadGallery = useCallback(async () => {
-    const res = await fetch('/api/gallery');
-    const data = await res.json();
-    setGallery(data);
+  const [draft, setDraft] = useState<Partial<GalleryImage> | null>(null);
+  const [filter, setFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const categories = list<string>(settings, 'galleryCategories');
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch('/api/gallery');
+      if (res.ok) setGallery(await res.json());
+    } finally {
+      setLoading(false);
+    }
   }, [setGallery]);
 
-  useEffect(() => { loadGallery(); }, [loadGallery]);
+  useEffect(() => { load(); }, [load]);
 
-  const openNew = () => {
-    setEditing({ category: 'general', url: '', caption: '', sortOrder: gallery.length + 1, isActive: true });
-    setDialogOpen(true);
+  /** Bulk upload straight into a category — the fastest way to fill a gallery. */
+  const uploadMany = async (files: FileList) => {
+    setUploading(true);
+    const category = filter === 'all' ? categories[0] ?? 'general' : filter;
+    let added = 0;
+
+    for (const file of Array.from(files)) {
+      try {
+        const body = new FormData();
+        body.append('file', file);
+        body.append('folder', `gallery/${category}`);
+        const uploadRes = await fetch('/api/upload', { method: 'POST', body });
+        const uploaded = await uploadRes.json();
+        if (!uploadRes.ok) throw new Error(uploaded.error || 'Upload failed');
+
+        const createRes = await fetch('/api/gallery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            url: uploaded.url,
+            category,
+            caption: file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '),
+            sortOrder: gallery.length + added + 1,
+          }),
+        });
+        if (!createRes.ok) throw new Error('Could not add the image to the gallery');
+        added += 1;
+      } catch (error) {
+        toast({
+          title: `Could not add ${file.name}`,
+          description: error instanceof Error ? error.message : undefined,
+          variant: 'destructive',
+        });
+      }
+    }
+
+    if (added) toast({ title: `Added ${added} image(s) to ${category}` });
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = '';
+    load();
   };
 
-  const handleSave = async () => {
-    if (!editing) return;
+  const save = async () => {
+    if (!draft?.url) {
+      toast({ title: 'Choose or upload an image first', variant: 'destructive' });
+      return;
+    }
+    setSaving(true);
     try {
-      if (editing.id) {
-        await fetch('/api/gallery', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) });
-        toast({ title: 'Image updated' });
-      } else {
-        await fetch('/api/gallery', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editing) });
-        toast({ title: 'Image added' });
-      }
-      setDialogOpen(false);
-      loadGallery();
-    } catch {
-      toast({ title: 'Save failed', variant: 'destructive' });
+      const res = await fetch('/api/gallery', {
+        method: draft.id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      toast({ title: draft.id ? 'Image updated' : 'Image added' });
+      setDraft(null);
+      load();
+    } catch (error) {
+      toast({ title: 'Save failed', description: error instanceof Error ? error.message : undefined, variant: 'destructive' });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    await fetch(`/api/gallery?id=${id}`, { method: 'DELETE' });
+  const remove = async (image: GalleryImage) => {
+    if (!confirm('Remove this image from the gallery?')) return;
+    await fetch(`/api/gallery?id=${image.id}`, { method: 'DELETE' });
     toast({ title: 'Image removed' });
-    loadGallery();
+    load();
   };
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (data.url) {
-        setEditing({ ...editing!, url: data.url });
-      }
-    } catch { /* ignore */ }
-    setUploading(false);
-  };
-
-  const filtered = filter === 'all' ? gallery : gallery.filter((g) => g.category === filter);
+  const filtered = filter === 'all' ? gallery : gallery.filter((image) => image.category === filter);
+  const allCategories = [...new Set([...categories, ...gallery.map((image) => image.category)])];
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-medium">Gallery Management</h2>
-        <div className="flex gap-3">
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+        <div>
+          <h2 className="text-lg font-medium">Gallery</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {filtered.length} image(s){filter !== 'all' ? ` in ${filter}` : ''}. Categories are configured under Website Copy.
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
           <Select value={filter} onValueChange={setFilter}>
-            <SelectTrigger className="w-[140px] h-9 text-xs rounded-none border-gold/20"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-[150px] h-9 text-xs rounded-none border-gold/20"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {categories.map((c) => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>)}
+              <SelectItem value="all">All categories</SelectItem>
+              {allCategories.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button onClick={openNew} className="bg-gold hover:bg-gold-dark text-white text-xs tracking-wider uppercase rounded-none">
+          <Button
+            variant="outline"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="border-gold/20 text-xs tracking-wider uppercase rounded-none"
+          >
+            {uploading ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Upload className="w-3.5 h-3.5 mr-1" />}
+            Bulk Upload
+          </Button>
+          <Button
+            onClick={() => setDraft({ url: '', category: filter === 'all' ? categories[0] ?? 'general' : filter, caption: '', isActive: true, sortOrder: gallery.length + 1 })}
+            className="bg-gold hover:bg-gold-dark text-white text-xs tracking-wider uppercase rounded-none"
+          >
             <Plus className="w-4 h-4 mr-1" /> Add Image
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-        {filtered.map((img) => (
-          <div key={img.id} className="relative group bg-white border border-gold/10 overflow-hidden">
-            <div className="aspect-[4/3] bg-cream">
-              <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${img.url})` }} />
-            </div>
-            <div className="p-3">
-              <p className="text-xs text-muted-foreground truncate">{img.caption || 'No caption'}</p>
-              <p className="text-[10px] text-gold uppercase tracking-wider">{img.category}</p>
-            </div>
-            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-              <Button size="sm" variant="ghost" onClick={() => handleDelete(img.id)} className="h-7 w-7 p-0 bg-black/50 text-white hover:bg-black/70 rounded-none">
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          </div>
-        ))}
-        {filtered.length === 0 && (
-          <p className="col-span-full text-center py-12 text-muted-foreground text-sm">No images in this category</p>
-        )}
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle className="text-xl font-light tracking-wider">Add Gallery Image</DialogTitle></DialogHeader>
-          <div className="space-y-4 mt-4">
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Image *</Label>
-              {editing?.url ? (
-                <div className="relative w-full h-48 bg-cream border border-gold/10">
-                  <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${editing.url})` }} />
-                  <button onClick={() => setEditing({ ...editing!, url: '' })} className="absolute top-2 right-2 w-6 h-6 bg-black/60 text-white rounded-full flex items-center justify-center cursor-pointer"><X className="w-3 h-3" /></button>
+      {loading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-12">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading gallery…
+        </div>
+      ) : filtered.length === 0 ? (
+        <p className="bg-white border border-gold/10 p-12 text-sm text-muted-foreground text-center">
+          No images here yet.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          {filtered.map((image) => (
+            <figure key={image.id} className="group bg-white border border-gold/10 overflow-hidden">
+              <div className="aspect-[4/3] bg-cream bg-cover bg-center relative" style={{ backgroundImage: `url(${image.url})` }}>
+                <div className="absolute inset-0 bg-charcoal/0 group-hover:bg-charcoal/50 transition-colors flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100">
+                  <button onClick={() => setDraft(image)} className="w-9 h-9 bg-white/90 flex items-center justify-center cursor-pointer" aria-label="Edit">
+                    <Pencil className="w-4 h-4 text-charcoal" />
+                  </button>
+                  <button onClick={() => remove(image)} className="w-9 h-9 bg-white/90 flex items-center justify-center cursor-pointer" aria-label="Delete">
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                  </button>
                 </div>
-              ) : (
-                <label className="w-full h-48 border-2 border-dashed border-gold/30 flex flex-col items-center justify-center cursor-pointer hover:border-gold/60 transition-colors">
-                  {uploading ? (
-                    <div className="animate-spin w-8 h-8 border-2 border-gold border-t-transparent rounded-full" />
-                  ) : (
-                    <>
-                      <Upload className="w-8 h-8 text-gold/50 mb-2" />
-                      <p className="text-sm text-muted-foreground">Click to upload image</p>
-                    </>
-                  )}
-                  <input type="file" accept="image/*" onChange={handleUpload} className="hidden" />
-                </label>
-              )}
+                {!image.isActive && (
+                  <span className="absolute top-2 left-2 bg-charcoal/80 text-white text-[10px] tracking-wider uppercase px-2 py-0.5">Hidden</span>
+                )}
+              </div>
+              <figcaption className="p-3">
+                <p className="text-xs text-charcoal truncate">{image.caption || 'Untitled'}</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">{image.category}</p>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => { if (event.target.files?.length) uploadMany(event.target.files); }}
+      />
+
+      <Dialog open={Boolean(draft)} onOpenChange={(open) => !open && setDraft(null)}>
+        <DialogContent className="max-w-lg rounded-none border-gold/20">
+          <DialogHeader>
+            <DialogTitle className="font-light tracking-wide">{draft?.id ? 'Edit Image' : 'Add Image'}</DialogTitle>
+          </DialogHeader>
+
+          {draft && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase text-muted-foreground">Image *</Label>
+                <ImageField value={draft.url ?? ''} onChange={(url) => setDraft({ ...draft, url })} folder="gallery" />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase text-muted-foreground">Caption</Label>
+                <Input value={draft.caption ?? ''} onChange={(e) => setDraft({ ...draft, caption: e.target.value })} className="rounded-none border-gold/20" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase text-muted-foreground">Category</Label>
+                  <Select value={draft.category ?? 'general'} onValueChange={(value) => setDraft({ ...draft, category: value })}>
+                    <SelectTrigger className="rounded-none border-gold/20"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[...new Set([...allCategories, 'general'])].map((category) => (
+                        <SelectItem key={category} value={category}>{category}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase text-muted-foreground">Sort Order</Label>
+                  <Input
+                    type="number"
+                    value={draft.sortOrder ?? 0}
+                    onChange={(e) => setDraft({ ...draft, sortOrder: Number.parseInt(e.target.value, 10) || 0 })}
+                    className="rounded-none border-gold/20"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between border border-gold/15 px-3 py-2.5">
+                <span className="text-xs tracking-wider uppercase text-muted-foreground">Visible</span>
+                <Switch checked={draft.isActive ?? true} onCheckedChange={(checked) => setDraft({ ...draft, isActive: checked })} />
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setDraft(null)} className="border-gold/20 text-xs tracking-wider uppercase rounded-none">
+                  Cancel
+                </Button>
+                <Button onClick={save} disabled={saving} className="bg-gold hover:bg-gold-dark text-white text-xs tracking-wider uppercase rounded-none">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null} Save
+                </Button>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Caption</Label>
-              <Input value={editing?.caption || ''} onChange={(e) => setEditing({ ...editing!, caption: e.target.value })} placeholder="Image caption" className="rounded-none border-gold/20" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Category</Label>
-              <Select value={editing?.category || 'general'} onValueChange={(v) => setEditing({ ...editing!, category: v })}>
-                <SelectTrigger className="rounded-none border-gold/20"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {categories.map((c) => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Sort Order</Label>
-              <Input type="number" value={editing?.sortOrder || 0} onChange={(e) => setEditing({ ...editing!, sortOrder: parseInt(e.target.value) || 0 })} className="rounded-none border-gold/20" />
-            </div>
-          </div>
-          <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-none border-gold/20">Cancel</Button>
-            <Button onClick={handleSave} className="bg-gold hover:bg-gold-dark text-white rounded-none"><Save className="w-4 h-4 mr-1" /> Save</Button>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

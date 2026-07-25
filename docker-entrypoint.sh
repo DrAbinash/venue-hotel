@@ -10,7 +10,7 @@ echo "  PORT: ${PORT:-3000}"
 echo "========================================="
 
 # Ensure data directory exists and is writable (important for Docker volumes on Synology)
-mkdir -p /app/data /app/public/uploads
+mkdir -p /app/data "${UPLOAD_DIR:-/app/data/uploads}"
 echo "==> Data directories ready."
 
 # Fix volume ownership if needed (non-root user can't chown, so we try)
@@ -21,11 +21,11 @@ else
   chmod 755 /app/data 2>/dev/null || true
 fi
 
-if [ -w /app/public/uploads ]; then
-  echo "==> /app/public/uploads is writable."
+if [ -w "${UPLOAD_DIR:-/app/data/uploads}" ]; then
+  echo "==> Upload directory is writable."
 else
-  echo "WARNING: /app/public/uploads is NOT writable. Attempting chmod..."
-  chmod 755 /app/public/uploads 2>/dev/null || true
+  echo "WARNING: Upload directory is NOT writable. Attempting chmod..."
+  chmod 755 "${UPLOAD_DIR:-/app/data/uploads}" 2>/dev/null || true
 fi
 
 # Check if prisma CLI exists
@@ -64,12 +64,28 @@ node "$PRISMA_CLI" db push --skip-generate --accept-data-loss || {
 }
 
 echo ""
-echo "==> Seeding database..."
-node /app/docker-seed.js || {
-  echo "WARNING: Seed script failed (non-fatal)."
-}
+echo "==> Scheduling first-boot seed..."
+# Seeding runs through the app's own /api/seed endpoint rather than a separate
+# script, so there is exactly one definition of the default content. It is
+# idempotent: existing rooms and menu items are left alone, and any settings
+# added by a later release are topped up on every boot.
+(
+  sleep 8
+  node -e "
+    const http = require('http');
+    http.get('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/seed', (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => console.log('==> Seed:', body.slice(0, 300)));
+    }).on('error', (err) => console.log('==> Seed skipped:', err.message));
+  "
+) &
 
 echo ""
 echo "==> Starting The Venue server on port ${PORT:-3000}..."
+if [ -z "$ADMIN_PASSWORD" ]; then
+  echo "WARNING: ADMIN_PASSWORD is not set — the admin panel is using its"
+  echo "         built-in default. Set it before exposing this to the internet."
+fi
 echo "========================================="
 exec node server.js

@@ -1,65 +1,90 @@
 import { create } from 'zustand';
-import type { HotelSettings, Room, Floor, Booking, GalleryImage } from '@/lib/types';
+import { SETTING_DEFAULTS } from '@/lib/settings-schema';
+import type { Booking, Floor, GalleryImage, HotelSettings, Room } from '@/lib/types';
 
-type View = 'home' | 'rooms' | 'gallery' | 'contact' | 'booking' | 'admin';
+export type View =
+  | 'home'
+  | 'rooms'
+  | 'restaurant'
+  | 'gallery'
+  | 'contact'
+  | 'booking'
+  | 'my-booking'
+  | 'admin';
+
+export interface BookingForm {
+  roomId: string | null;
+  roomType: string;
+  basePrice: number;
+  checkIn: string;
+  checkOut: string;
+  adults: number;
+  children: number;
+}
 
 interface HotelStore {
   view: View;
-  setView: (v: View) => void;
+  setView: (view: View) => void;
 
   settings: HotelSettings;
-  setSettings: (s: HotelSettings) => void;
+  setSettings: (settings: HotelSettings) => void;
 
   rooms: Room[];
-  setRooms: (r: Room[]) => void;
+  setRooms: (rooms: Room[]) => void;
 
   floors: Floor[];
-  setFloors: (f: Floor[]) => void;
+  setFloors: (floors: Floor[]) => void;
 
   bookings: Booking[];
-  setBookings: (b: Booking[]) => void;
+  setBookings: (bookings: Booking[]) => void;
 
   gallery: GalleryImage[];
-  setGallery: (g: GalleryImage[]) => void;
+  setGallery: (gallery: GalleryImage[]) => void;
 
-  bookingForm: {
-    roomType: string;
-    roomId: string | null;
-    basePrice: number;
-    checkIn: string;
-    checkOut: string;
-    adults: number;
-    children: number;
-  };
-  setBookingForm: (f: Partial<HotelStore['bookingForm']>) => void;
+  bookingForm: BookingForm;
+  setBookingForm: (patch: Partial<BookingForm>) => void;
+  resetBookingForm: () => void;
 
   selectedRoom: Room | null;
-  setSelectedRoom: (r: Room | null) => void;
+  setSelectedRoom: (room: Room | null) => void;
 
   mobileMenuOpen: boolean;
-  setMobileMenuOpen: (v: boolean) => void;
+  setMobileMenuOpen: (open: boolean) => void;
 
   adminTab: string;
-  setAdminTab: (t: string) => void;
+  setAdminTab: (tab: string) => void;
+
+  isAdmin: boolean;
+  setIsAdmin: (value: boolean) => void;
 }
+
+/** Tomorrow and the day after, so the date pickers open on a usable range. */
+function defaultDates(): { checkIn: string; checkOut: string } {
+  const day = 86_400_000;
+  const now = Date.now();
+  return {
+    checkIn: new Date(now + day).toISOString().slice(0, 10),
+    checkOut: new Date(now + 2 * day).toISOString().slice(0, 10),
+  };
+}
+
+const emptyBookingForm = (): BookingForm => ({
+  roomId: null,
+  roomType: '',
+  basePrice: 0,
+  ...defaultDates(),
+  adults: 2,
+  children: 0,
+});
 
 export const useHotelStore = create<HotelStore>((set) => ({
   view: 'home',
   setView: (view) => set({ view }),
 
-  settings: {
-    hotelName: 'The Venue',
-    tagline: 'Where Luxury Meets Legacy',
-    address: '42 Heritage Lane, City Center',
-    city: 'Metropolis',
-    phone: '+1 (555) 234-5678',
-    email: 'reservations@thevenue.com',
-    checkInTime: '14:00',
-    checkOutTime: '11:00',
-    description: '',
-    heroSubtitle: 'Experience the pinnacle of luxury hospitality',
-  },
-  setSettings: (settings) => set({ settings }),
+  // Seeded with the shipped defaults so the first paint is never blank while
+  // the real settings are still loading.
+  settings: { ...SETTING_DEFAULTS },
+  setSettings: (settings) => set({ settings: { ...SETTING_DEFAULTS, ...settings } }),
 
   rooms: [],
   setRooms: (rooms) => set({ rooms }),
@@ -73,17 +98,9 @@ export const useHotelStore = create<HotelStore>((set) => ({
   gallery: [],
   setGallery: (gallery) => set({ gallery }),
 
-  bookingForm: {
-    roomType: '',
-    roomId: null,
-    basePrice: 0,
-    checkIn: '',
-    checkOut: '',
-    adults: 1,
-    children: 0,
-  },
-  setBookingForm: (f) =>
-    set((state) => ({ bookingForm: { ...state.bookingForm, ...f } })),
+  bookingForm: emptyBookingForm(),
+  setBookingForm: (patch) => set((state) => ({ bookingForm: { ...state.bookingForm, ...patch } })),
+  resetBookingForm: () => set({ bookingForm: emptyBookingForm(), selectedRoom: null }),
 
   selectedRoom: null,
   setSelectedRoom: (selectedRoom) => set({ selectedRoom }),
@@ -91,6 +108,9 @@ export const useHotelStore = create<HotelStore>((set) => ({
   mobileMenuOpen: false,
   setMobileMenuOpen: (mobileMenuOpen) => set({ mobileMenuOpen }),
 
-  adminTab: 'rooms',
+  adminTab: 'dashboard',
   setAdminTab: (adminTab) => set({ adminTab }),
+
+  isAdmin: false,
+  setIsAdmin: (isAdmin) => set({ isAdmin }),
 }));

@@ -1,277 +1,416 @@
 'use client';
 
-import { useHotelStore } from '@/lib/store';
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Pencil, Trash2, Upload, X, Save, Image as ImageIcon } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { GripVertical, Loader2, Pencil, Plus, Trash2, Upload, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import type { Room, Floor } from '@/lib/types';
+import { useHotelStore } from '@/lib/store';
+import { formatMoney } from '@/lib/pricing';
+import { jsonArray } from '@/lib/content';
+import type { Room } from '@/lib/types';
+
+const EMPTY: Partial<Room> = {
+  name: '', roomNumber: '', floorId: '', type: 'Deluxe', basePrice: 0, quantity: 1,
+  maxGuests: 2, extraGuestFee: 0, bedType: 'King', size: '', view: '', description: '',
+  amenities: '[]', images: '[]', isActive: true, isFeatured: false, sortOrder: 0,
+};
 
 export default function AdminRooms() {
-  const { rooms, setRooms, floors } = useHotelStore();
   const { toast } = useToast();
-  const [editing, setEditing] = useState<Partial<Room> | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const { rooms, setRooms, floors, setFloors, settings } = useHotelStore();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const [draft, setDraft] = useState<Partial<Room> | null>(null);
+  const [amenityText, setAmenityText] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [amenitiesInput, setAmenitiesInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  const loadRooms = useCallback(async () => {
-    const res = await fetch('/api/rooms');
-    const data = await res.json();
-    setRooms(data);
-  }, [setRooms]);
+  const money = (value: number) => formatMoney(value, settings);
 
-  useEffect(() => { loadRooms(); }, [loadRooms]);
+  const load = useCallback(async () => {
+    try {
+      const [roomsRes, floorsRes] = await Promise.all([fetch('/api/rooms'), fetch('/api/floors')]);
+      if (roomsRes.ok) setRooms(await roomsRes.json());
+      if (floorsRes.ok) setFloors(await floorsRes.json());
+    } finally {
+      setLoading(false);
+    }
+  }, [setRooms, setFloors]);
+
+  useEffect(() => { load(); }, [load]);
 
   const openNew = () => {
-    setEditing({
-      name: '', roomNumber: '', floorId: floors[0]?.id || '', type: 'Standard',
-      basePrice: 0, maxGuests: 2, bedType: '', size: '', description: '',
-      amenities: '[]', images: '[]', isActive: true, sortOrder: 0,
-    });
-    setAmenitiesInput('');
-    setDialogOpen(true);
+    setDraft({ ...EMPTY, floorId: floors[0]?.id ?? '', sortOrder: rooms.length + 1 });
+    setAmenityText('');
   };
 
   const openEdit = (room: Room) => {
-    setEditing({ ...room });
-    const ams: string[] = JSON.parse(room.amenities);
-    setAmenitiesInput(ams.join(', '));
-    setDialogOpen(true);
+    setDraft({ ...room });
+    setAmenityText(jsonArray(room.amenities).join(', '));
   };
 
-  const handleSave = async () => {
-    if (!editing) return;
-    const payload = {
-      ...editing,
-      amenities: JSON.stringify(amenitiesInput.split(',').map((s) => s.trim()).filter(Boolean)),
-    };
-    try {
-      if (editing.id) {
-        await fetch('/api/rooms', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        toast({ title: 'Room updated successfully' });
-      } else {
-        await fetch('/api/rooms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        toast({ title: 'Room created successfully' });
+  /**
+   * Uploads go through /api/upload, which optimises the image and returns a
+   * stable URL. Failures surface as a toast — the previous version swallowed
+   * them, which is why photos silently never appeared.
+   */
+  const uploadImages = async (files: FileList) => {
+    if (!draft) return;
+    setUploading(true);
+    const uploaded: string[] = [];
+
+    for (const file of Array.from(files)) {
+      try {
+        const body = new FormData();
+        body.append('file', file);
+        body.append('folder', 'rooms');
+        const res = await fetch('/api/upload', { method: 'POST', body });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Upload failed');
+        uploaded.push(data.url);
+      } catch (error) {
+        toast({
+          title: `Could not upload ${file.name}`,
+          description: error instanceof Error ? error.message : undefined,
+          variant: 'destructive',
+        });
       }
-      setDialogOpen(false);
-      loadRooms();
-    } catch {
-      toast({ title: 'Save failed', variant: 'destructive' });
+    }
+
+    if (uploaded.length) {
+      setDraft((current) => {
+        if (!current) return current;
+        return { ...current, images: JSON.stringify([...jsonArray(current.images), ...uploaded]) };
+      });
+      toast({ title: `Added ${uploaded.length} photo(s)` });
+    }
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const moveImage = (from: number, to: number) => {
+    if (!draft) return;
+    const images = jsonArray(draft.images);
+    if (to < 0 || to >= images.length) return;
+    const [moved] = images.splice(from, 1);
+    images.splice(to, 0, moved);
+    setDraft({ ...draft, images: JSON.stringify(images) });
+  };
+
+  const removeImage = (index: number) => {
+    if (!draft) return;
+    const images = jsonArray(draft.images);
+    images.splice(index, 1);
+    setDraft({ ...draft, images: JSON.stringify(images) });
+  };
+
+  const save = async () => {
+    if (!draft?.name || !draft.roomNumber || !draft.floorId) {
+      toast({ title: 'Name, room number and floor are required', variant: 'destructive' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        ...draft,
+        amenities: JSON.stringify(
+          amenityText.split(',').map((amenity) => amenity.trim()).filter(Boolean),
+        ),
+      };
+      const res = await fetch('/api/rooms', {
+        method: draft.id ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+
+      toast({ title: draft.id ? 'Room updated' : 'Room created' });
+      setDraft(null);
+      load();
+    } catch (error) {
+      toast({
+        title: 'Save failed',
+        description: error instanceof Error ? error.message : undefined,
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    await fetch(`/api/rooms?id=${id}`, { method: 'DELETE' });
-    toast({ title: 'Room deleted' });
-    loadRooms();
+  const remove = async (room: Room) => {
+    if (!confirm(`Delete “${room.name}”?`)) return;
+    const res = await fetch(`/api/rooms?id=${room.id}`, { method: 'DELETE' });
+    const data = await res.json();
+    toast({ title: data.message ?? 'Room deleted' });
+    load();
   };
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !editing) return;
-    setUploading(true);
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const res = await fetch('/api/upload', { method: 'POST', body: fd });
-      const data = await res.json();
-      if (data.url) {
-        const imgs: string[] = editing.images ? JSON.parse(editing.images) : [];
-        imgs.push(data.url);
-        setEditing({ ...editing, images: JSON.stringify(imgs) });
-      }
-    } catch { /* ignore */ }
-    setUploading(false);
-  };
-
-  const removeImage = (idx: number) => {
-    if (!editing) return;
-    const imgs: string[] = JSON.parse(editing.images || '[]');
-    imgs.splice(idx, 1);
-    setEditing({ ...editing, images: JSON.stringify(imgs) });
-  };
+  const draftImages = draft ? jsonArray(draft.images) : [];
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-lg font-medium">Room Management</h2>
-        <Button onClick={openNew} className="bg-gold hover:bg-gold-dark text-white text-xs tracking-wider uppercase rounded-none">
+      <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+        <div>
+          <h2 className="text-lg font-medium">Rooms</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Rates, inventory and photographs. Quantity controls how many of a room type can be sold at once.
+          </p>
+        </div>
+        <Button
+          onClick={openNew}
+          disabled={floors.length === 0}
+          className="bg-gold hover:bg-gold-dark text-white text-xs tracking-wider uppercase rounded-none"
+        >
           <Plus className="w-4 h-4 mr-1" /> Add Room
         </Button>
       </div>
 
-      <div className="bg-white border border-gold/10 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-gold/10 hover:bg-transparent">
-              <TableHead className="text-xs tracking-wider uppercase">Room</TableHead>
-              <TableHead className="text-xs tracking-wider uppercase">Type</TableHead>
-              <TableHead className="text-xs tracking-wider uppercase">Floor</TableHead>
-              <TableHead className="text-xs tracking-wider uppercase">Price</TableHead>
-              <TableHead className="text-xs tracking-wider uppercase">Photos</TableHead>
-              <TableHead className="text-xs tracking-wider uppercase">Status</TableHead>
-              <TableHead className="text-xs tracking-wider uppercase text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rooms.map((room) => {
-              const images: string[] = JSON.parse(room.images || '[]');
-              return (
-                <TableRow key={room.id} className="border-gold/5">
+      {floors.length === 0 && !loading && (
+        <p className="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-4 mb-4">
+          Add a floor first — every room belongs to one.
+        </p>
+      )}
+
+      <div className="bg-white border border-gold/10 overflow-x-auto">
+        {loading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground p-8">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading rooms…
+          </div>
+        ) : rooms.length === 0 ? (
+          <p className="p-8 text-sm text-muted-foreground text-center">No rooms yet.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Room</TableHead>
+                <TableHead>Floor</TableHead>
+                <TableHead className="text-right">Rate</TableHead>
+                <TableHead className="text-center">Units</TableHead>
+                <TableHead className="text-center">Guests</TableHead>
+                <TableHead>Photos</TableHead>
+                <TableHead>Live</TableHead>
+                <TableHead className="text-right">Edit</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rooms.map((room) => (
+                <TableRow key={room.id}>
                   <TableCell>
-                    <div>
-                      <p className="font-medium text-sm">{room.name}</p>
-                      <p className="text-xs text-muted-foreground">#{room.roomNumber}</p>
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-10 h-10 bg-cream bg-cover bg-center flex-shrink-0"
+                        style={jsonArray(room.images)[0] ? { backgroundImage: `url(${jsonArray(room.images)[0]})` } : undefined}
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm text-charcoal truncate">{room.name}</p>
+                        <p className="text-[11px] text-muted-foreground">#{room.roomNumber} · {room.type}</p>
+                      </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-sm">{room.type}</TableCell>
-                  <TableCell className="text-sm">{room.floor?.name || '-'}</TableCell>
-                  <TableCell className="text-sm">${room.basePrice}/night</TableCell>
+                  <TableCell className="text-xs">{room.floor?.name ?? '—'}</TableCell>
+                  <TableCell className="text-right text-sm">{money(room.basePrice)}</TableCell>
+                  <TableCell className="text-center text-sm">{room.quantity}</TableCell>
+                  <TableCell className="text-center text-sm">{room.maxGuests}</TableCell>
                   <TableCell>
-                    <div className="flex -space-x-1">
-                      {images.slice(0, 3).map((img, i) => (
-                        <div key={i} className="w-8 h-8 rounded bg-cream overflow-hidden border border-white">
-                          <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${img})` }} />
-                        </div>
-                      ))}
-                      <span className="text-xs text-muted-foreground ml-1 self-center">{images.length}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={room.isActive ? 'default' : 'secondary'} className={room.isActive ? 'bg-green-100 text-green-700' : ''}>
-                      {room.isActive ? 'Active' : 'Inactive'}
+                    <Badge variant="outline" className="text-[10px] rounded-none">
+                      {jsonArray(room.images).length}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" onClick={() => openEdit(room)} className="h-8 w-8 p-0">
-                      <Pencil className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(room.id)} className="h-8 w-8 p-0 text-destructive">
+                  <TableCell>
+                    <Switch
+                      checked={room.isActive}
+                      onCheckedChange={async (checked) => {
+                        await fetch('/api/rooms', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ id: room.id, isActive: checked }),
+                        });
+                        load();
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(room)}><Pencil className="w-3.5 h-3.5" /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => remove(room)} className="text-muted-foreground hover:text-red-500">
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </TableCell>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </div>
 
-      {/* Room Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={Boolean(draft)} onOpenChange={(open) => !open && setDraft(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto rounded-none border-gold/20">
           <DialogHeader>
-            <DialogTitle className="text-xl font-light tracking-wider">
-              {editing?.id ? 'Edit Room' : 'New Room'}
-            </DialogTitle>
+            <DialogTitle className="font-light tracking-wide">{draft?.id ? 'Edit Room' : 'New Room'}</DialogTitle>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Room Name *</Label>
-              <Input value={editing?.name || ''} onChange={(e) => setEditing({ ...editing!, name: e.target.value })} className="rounded-none border-gold/20" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Room Number *</Label>
-              <Input value={editing?.roomNumber || ''} onChange={(e) => setEditing({ ...editing!, roomNumber: e.target.value })} className="rounded-none border-gold/20" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Floor *</Label>
-              <Select value={editing?.floorId || ''} onValueChange={(v) => setEditing({ ...editing!, floorId: v })}>
-                <SelectTrigger className="rounded-none border-gold/20"><SelectValue placeholder="Select Floor" /></SelectTrigger>
-                <SelectContent>
-                  {floors.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Room Type *</Label>
-              <Select value={editing?.type || 'Standard'} onValueChange={(v) => setEditing({ ...editing!, type: v })}>
-                <SelectTrigger className="rounded-none border-gold/20"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {['Standard', 'Deluxe Room', 'Superior Room', 'Premium Suite', 'Royal Suite', 'Presidential Suite'].map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Base Price ($) *</Label>
-              <Input type="number" value={editing?.basePrice || ''} onChange={(e) => setEditing({ ...editing!, basePrice: parseFloat(e.target.value) || 0 })} className="rounded-none border-gold/20" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Max Guests</Label>
-              <Input type="number" value={editing?.maxGuests || 2} onChange={(e) => setEditing({ ...editing!, maxGuests: parseInt(e.target.value) || 2 })} className="rounded-none border-gold/20" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Bed Type</Label>
-              <Input value={editing?.bedType || ''} onChange={(e) => setEditing({ ...editing!, bedType: e.target.value })} placeholder="King, Queen, Twin..." className="rounded-none border-gold/20" />
-            </div>
-            <div className="space-y-2">
-              <Label className="text-xs tracking-wider uppercase">Size</Label>
-              <Input value={editing?.size || ''} onChange={(e) => setEditing({ ...editing!, size: e.target.value })} placeholder="45 sqm" className="rounded-none border-gold/20" />
-            </div>
-          </div>
-
-          <div className="space-y-2 mt-4">
-            <Label className="text-xs tracking-wider uppercase">Description *</Label>
-            <Textarea value={editing?.description || ''} onChange={(e) => setEditing({ ...editing!, description: e.target.value })} rows={3} className="rounded-none border-gold/20 resize-none" />
-          </div>
-
-          <div className="space-y-2 mt-4">
-            <Label className="text-xs tracking-wider uppercase">Amenities (comma-separated)</Label>
-            <Input value={amenitiesInput} onChange={(e) => setAmenitiesInput(e.target.value)} placeholder="Free WiFi, Air Conditioning, Mini Bar..." className="rounded-none border-gold/20" />
-          </div>
-
-          {/* Image Upload */}
-          <div className="space-y-3 mt-4">
-            <Label className="text-xs tracking-wider uppercase">Photographs</Label>
-            <div className="flex flex-wrap gap-3">
-              {(editing?.images ? JSON.parse(editing.images) : [] as string[]).map((img: string, idx: number) => (
-                <div key={idx} className="relative w-24 h-24 bg-cream border border-gold/10 overflow-hidden group">
-                  <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${img})` }} />
-                  <button
-                    onClick={() => removeImage(idx)}
-                    className="absolute top-1 right-1 w-5 h-5 bg-black/60 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
+          {draft && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase text-muted-foreground">Name *</Label>
+                  <Input value={draft.name ?? ''} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="rounded-none border-gold/20" />
                 </div>
-              ))}
-              <label className="w-24 h-24 border-2 border-dashed border-gold/30 flex flex-col items-center justify-center cursor-pointer hover:border-gold/60 transition-colors">
-                {uploading ? (
-                  <div className="animate-spin w-5 h-5 border-2 border-gold border-t-transparent rounded-full" />
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase text-muted-foreground">Room Number *</Label>
+                  <Input value={draft.roomNumber ?? ''} onChange={(e) => setDraft({ ...draft, roomNumber: e.target.value })} className="rounded-none border-gold/20" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase text-muted-foreground">Floor *</Label>
+                  <Select value={draft.floorId ?? ''} onValueChange={(value) => setDraft({ ...draft, floorId: value })}>
+                    <SelectTrigger className="rounded-none border-gold/20"><SelectValue placeholder="Choose" /></SelectTrigger>
+                    <SelectContent>
+                      {floors.map((floor) => <SelectItem key={floor.id} value={floor.id}>{floor.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs tracking-wider uppercase text-muted-foreground">Type</Label>
+                  <Input value={draft.type ?? ''} onChange={(e) => setDraft({ ...draft, type: e.target.value })} className="rounded-none border-gold/20" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {([
+                  ['basePrice', 'Rate / night'],
+                  ['quantity', 'Units'],
+                  ['maxGuests', 'Max Guests'],
+                  ['extraGuestFee', 'Extra Guest Fee'],
+                ] as const).map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <Label className="text-xs tracking-wider uppercase text-muted-foreground">{label}</Label>
+                    <Input
+                      type="number"
+                      value={String(draft[key] ?? 0)}
+                      onChange={(e) => setDraft({ ...draft, [key]: Number.parseFloat(e.target.value) || 0 })}
+                      className="rounded-none border-gold/20"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {([
+                  ['bedType', 'Bed'],
+                  ['size', 'Size'],
+                  ['view', 'View'],
+                ] as const).map(([key, label]) => (
+                  <div key={key} className="space-y-2">
+                    <Label className="text-xs tracking-wider uppercase text-muted-foreground">{label}</Label>
+                    <Input
+                      value={String(draft[key] ?? '')}
+                      onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
+                      className="rounded-none border-gold/20"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase text-muted-foreground">Description</Label>
+                <Textarea rows={3} value={draft.description ?? ''} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="rounded-none border-gold/20 resize-none" />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs tracking-wider uppercase text-muted-foreground">Amenities</Label>
+                <Textarea
+                  rows={2}
+                  value={amenityText}
+                  onChange={(e) => setAmenityText(e.target.value)}
+                  placeholder="Free WiFi, Air Conditioning, Mini Bar"
+                  className="rounded-none border-gold/20 resize-none"
+                />
+                <p className="text-[11px] text-muted-foreground">Separate each with a comma.</p>
+              </div>
+
+              {/* --------------------------------------------------- photos */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs tracking-wider uppercase text-muted-foreground">Photographs</Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    className="border-gold/20 text-[11px] tracking-wider uppercase rounded-none"
+                  >
+                    {uploading ? <Loader2 className="w-3 h-3 mr-1.5 animate-spin" /> : <Upload className="w-3 h-3 mr-1.5" />}
+                    {uploading ? 'Uploading…' : 'Upload'}
+                  </Button>
+                </div>
+
+                {draftImages.length === 0 ? (
+                  <p className="text-xs text-muted-foreground border border-dashed border-gold/20 p-6 text-center">
+                    No photographs yet. The first one is used as the card image.
+                  </p>
                 ) : (
-                  <>
-                    <Upload className="w-5 h-5 text-gold/50 mb-1" />
-                    <span className="text-[10px] text-muted-foreground">Upload</span>
-                  </>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                    {draftImages.map((image, index) => (
+                      <div key={`${image}-${index}`} className="relative group aspect-[4/3] bg-cream bg-cover bg-center border border-gold/10" style={{ backgroundImage: `url(${image})` }}>
+                        {index === 0 && (
+                          <span className="absolute top-1 left-1 bg-gold text-white text-[9px] tracking-wider uppercase px-1.5 py-0.5">Cover</span>
+                        )}
+                        <div className="absolute inset-0 bg-charcoal/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
+                          <button onClick={() => moveImage(index, index - 1)} className="w-7 h-7 bg-white/90 flex items-center justify-center cursor-pointer" aria-label="Move earlier">
+                            <GripVertical className="w-3.5 h-3.5 text-charcoal" />
+                          </button>
+                          <button onClick={() => removeImage(index)} className="w-7 h-7 bg-white/90 flex items-center justify-center cursor-pointer" aria-label="Remove">
+                            <X className="w-3.5 h-3.5 text-red-500" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
-                <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-              </label>
+
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => { if (event.target.files?.length) uploadImages(event.target.files); }}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center justify-between border border-gold/15 px-3 py-2.5">
+                  <span className="text-xs tracking-wider uppercase text-muted-foreground">Live on site</span>
+                  <Switch checked={draft.isActive ?? true} onCheckedChange={(checked) => setDraft({ ...draft, isActive: checked })} />
+                </div>
+                <div className="flex items-center justify-between border border-gold/15 px-3 py-2.5">
+                  <span className="text-xs tracking-wider uppercase text-muted-foreground">Signature room</span>
+                  <Switch checked={draft.isFeatured ?? false} onCheckedChange={(checked) => setDraft({ ...draft, isFeatured: checked })} />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" onClick={() => setDraft(null)} className="border-gold/20 text-xs tracking-wider uppercase rounded-none">
+                  Cancel
+                </Button>
+                <Button onClick={save} disabled={saving} className="bg-gold hover:bg-gold-dark text-white text-xs tracking-wider uppercase rounded-none">
+                  {saving ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : null} Save Room
+                </Button>
+              </div>
             </div>
-          </div>
-
-          <div className="flex items-center gap-3 mt-4">
-            <Switch checked={editing?.isActive ?? true} onCheckedChange={(v) => setEditing({ ...editing!, isActive: v })} />
-            <Label className="text-sm">Active</Label>
-          </div>
-
-          <div className="flex justify-end gap-3 mt-6">
-            <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-none border-gold/20">Cancel</Button>
-            <Button onClick={handleSave} className="bg-gold hover:bg-gold-dark text-white rounded-none">
-              <Save className="w-4 h-4 mr-1" /> Save
-            </Button>
-          </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
