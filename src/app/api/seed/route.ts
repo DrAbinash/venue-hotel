@@ -7,10 +7,10 @@ export const dynamic = 'force-dynamic';
 /**
  * First-boot seed.
  *
- * Settings are topped up on every call — adding a new field to the settings
- * schema makes it appear in the admin panel without a manual migration — while
- * rooms, floors and gallery rows are only created when the database is empty,
- * so real content is never overwritten.
+ * Safe to call on every boot and every page load. Each section — settings,
+ * floors, rooms, gallery, menu — is filled in only when that section is empty,
+ * so real content is never overwritten and a release that introduces new
+ * content still reaches a database seeded by an earlier release.
  */
 export async function GET() {
   try {
@@ -27,10 +27,11 @@ export async function GET() {
     }
     if (newSettings) created.push(`${newSettings} settings`);
 
-    const roomCount = await db.room.count();
-    if (roomCount > 0) {
-      return NextResponse.json({ message: 'Already seeded', rooms: roomCount, created });
-    }
+    // Every block below is guarded on its own emptiness rather than on one
+    // shared "already seeded" gate. A single gate keyed off the room count
+    // meant an installation created before a later release — the restaurant,
+    // say — could never receive that release's content: rooms existed, so the
+    // seed returned early and the menu below was never reached.
 
     // ---- Floors ----
     const floorSpecs = [
@@ -39,91 +40,100 @@ export async function GET() {
       { name: 'Second Floor', number: 3, description: 'Suites with private terraces.' },
       { name: 'Third Floor — Premium', number: 4, description: 'Signature suites and the rooftop pool.' },
     ];
-    const floors: { id: string; name: string; number: number }[] = [];
-    for (let i = 0; i < floorSpecs.length; i += 1) {
-      floors.push(
-        await db.floor.create({ data: { ...floorSpecs[i], sortOrder: i + 1 } }),
-      );
+    const floors: { id: string; name: string; number: number }[] =
+      await db.floor.findMany({ orderBy: { sortOrder: 'asc' } });
+    if (floors.length === 0) {
+      for (let i = 0; i < floorSpecs.length; i += 1) {
+        floors.push(
+          await db.floor.create({ data: { ...floorSpecs[i], sortOrder: i + 1 } }),
+        );
+      }
+      created.push(`${floorSpecs.length} floors`);
     }
-    created.push('4 floors');
 
     // ---- Rooms (placeholder inventory — edit or replace from Admin → Rooms) ----
-    const roomSpecs = [
-      {
-        type: 'Deluxe Room', price: 7500, quantity: 12, guests: 2, extra: 1500, bed: 'King', size: '45 sqm',
-        view: 'Garden View', floor: 0,
-        amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Rain Shower'],
-        images: ['https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1200&q=80'],
-      },
-      {
-        type: 'Superior Room', price: 10500, quantity: 8, guests: 3, extra: 1500, bed: 'King', size: '55 sqm',
-        view: 'City View', floor: 1,
-        amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Balcony', 'Bathtub', 'Espresso Machine'],
-        images: ['https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1200&q=80'],
-      },
-      {
-        type: 'Premium Suite', price: 18500, quantity: 5, guests: 4, extra: 2500, bed: 'King', size: '85 sqm',
-        view: 'Skyline View', floor: 2,
-        amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Private Balcony', 'Bathtub', 'Living Area', 'Dining Area', 'Club Lounge Access'],
-        images: ['https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200&q=80'],
-      },
-      {
-        type: 'Royal Suite', price: 32000, quantity: 2, guests: 4, extra: 3500, bed: 'King', size: '120 sqm',
-        view: 'Panoramic View', floor: 3,
-        amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Private Terrace', 'Jacuzzi', 'Living Area', 'Dining Area', 'Butler Service', 'Airport Transfer'],
-        images: ['https://images.unsplash.com/photo-1591088398332-8a7791972843?w=1200&q=80'],
-      },
-    ];
-
-    for (let i = 0; i < roomSpecs.length; i += 1) {
-      const spec = roomSpecs[i];
-      const floor = floors[spec.floor];
-      const roomNumber = `${floor.number}0${i + 1}`;
-      await db.room.create({
-        data: {
-          name: spec.type,
-          roomNumber,
-          floorId: floor.id,
-          type: spec.type,
-          basePrice: spec.price,
-          quantity: spec.quantity,
-          maxGuests: spec.guests,
-          extraGuestFee: spec.extra,
-          bedType: spec.bed,
-          size: spec.size,
-          view: spec.view,
-          isFeatured: i >= 2,
-          description: `${spec.type} — ${spec.size} of considered comfort on the ${floor.name}. A ${spec.bed.toLowerCase()} bed, a marble bathroom and a ${spec.view.toLowerCase()} that earns its name.`,
-          amenities: JSON.stringify(spec.amenities),
-          images: JSON.stringify(spec.images),
-          sortOrder: i + 1,
+    if (floors.length > 0 && (await db.room.count()) === 0) {
+      const roomSpecs = [
+        {
+          type: 'Deluxe Room', price: 7500, quantity: 12, guests: 2, extra: 1500, bed: 'King', size: '45 sqm',
+          view: 'Garden View', floor: 0,
+          amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Rain Shower'],
+          images: ['https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1200&q=80'],
         },
-      });
+        {
+          type: 'Superior Room', price: 10500, quantity: 8, guests: 3, extra: 1500, bed: 'King', size: '55 sqm',
+          view: 'City View', floor: 1,
+          amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Balcony', 'Bathtub', 'Espresso Machine'],
+          images: ['https://images.unsplash.com/photo-1590490360182-c33d57733427?w=1200&q=80'],
+        },
+        {
+          type: 'Premium Suite', price: 18500, quantity: 5, guests: 4, extra: 2500, bed: 'King', size: '85 sqm',
+          view: 'Skyline View', floor: 2,
+          amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Private Balcony', 'Bathtub', 'Living Area', 'Dining Area', 'Club Lounge Access'],
+          images: ['https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200&q=80'],
+        },
+        {
+          type: 'Royal Suite', price: 32000, quantity: 2, guests: 4, extra: 3500, bed: 'King', size: '120 sqm',
+          view: 'Panoramic View', floor: 3,
+          amenities: ['Free WiFi', 'Air Conditioning', 'Mini Bar', 'Room Service', 'Smart TV', 'In-room Safe', 'Private Terrace', 'Jacuzzi', 'Living Area', 'Dining Area', 'Butler Service', 'Airport Transfer'],
+          images: ['https://images.unsplash.com/photo-1591088398332-8a7791972843?w=1200&q=80'],
+        },
+      ];
+
+      for (let i = 0; i < roomSpecs.length; i += 1) {
+        const spec = roomSpecs[i];
+        // An existing install may carry its own floors, so fall back rather than
+        // indexing off the end of a shorter list.
+        const floor = floors[spec.floor] ?? floors[floors.length - 1];
+        const roomNumber = `${floor.number}0${i + 1}`;
+        await db.room.create({
+          data: {
+            name: spec.type,
+            roomNumber,
+            floorId: floor.id,
+            type: spec.type,
+            basePrice: spec.price,
+            quantity: spec.quantity,
+            maxGuests: spec.guests,
+            extraGuestFee: spec.extra,
+            bedType: spec.bed,
+            size: spec.size,
+            view: spec.view,
+            isFeatured: i >= 2,
+            description: `${spec.type} — ${spec.size} of considered comfort on the ${floor.name}. A ${spec.bed.toLowerCase()} bed, a marble bathroom and a ${spec.view.toLowerCase()} that earns its name.`,
+            amenities: JSON.stringify(spec.amenities),
+            images: JSON.stringify(spec.images),
+            sortOrder: i + 1,
+          },
+        });
+      }
+      created.push(`${roomSpecs.length} rooms`);
     }
-    created.push(`${roomSpecs.length} rooms`);
 
     // ---- Gallery placeholders ----
-    const galleryItems = [
-      { category: 'rooms', caption: 'Deluxe Room', url: 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1200&q=80' },
-      { category: 'rooms', caption: 'Suite Living Area', url: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200&q=80' },
-      { category: 'rooms', caption: 'Royal Suite Bedroom', url: 'https://images.unsplash.com/photo-1591088398332-8a7791972843?w=1200&q=80' },
-      { category: 'dining', caption: 'The Restaurant', url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80' },
-      { category: 'dining', caption: 'Rooftop Bar', url: 'https://images.unsplash.com/photo-1470337458703-46ad1756a187?w=1200&q=80' },
-      { category: 'dining', caption: 'Breakfast Service', url: 'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=1200&q=80' },
-      { category: 'amenities', caption: 'Infinity Pool', url: 'https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1200&q=80' },
-      { category: 'amenities', caption: 'The Spa', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1200&q=80' },
-      { category: 'amenities', caption: 'Fitness Centre', url: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1200&q=80' },
-      { category: 'exterior', caption: 'The Facade', url: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&q=80' },
-      { category: 'exterior', caption: 'Grand Lobby', url: 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1200&q=80' },
-      { category: 'exterior', caption: 'Garden Terrace', url: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1200&q=80' },
-      { category: 'events', caption: 'Banquet Hall', url: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1200&q=80' },
-      { category: 'events', caption: 'Conference Room', url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80' },
-      { category: 'events', caption: 'Rooftop Celebration', url: 'https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=1200&q=80' },
-    ];
-    for (let i = 0; i < galleryItems.length; i += 1) {
-      await db.galleryImage.create({ data: { ...galleryItems[i], sortOrder: i + 1 } });
+    if ((await db.galleryImage.count()) === 0) {
+      const galleryItems = [
+        { category: 'rooms', caption: 'Deluxe Room', url: 'https://images.unsplash.com/photo-1611892440504-42a792e24d32?w=1200&q=80' },
+        { category: 'rooms', caption: 'Suite Living Area', url: 'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=1200&q=80' },
+        { category: 'rooms', caption: 'Royal Suite Bedroom', url: 'https://images.unsplash.com/photo-1591088398332-8a7791972843?w=1200&q=80' },
+        { category: 'dining', caption: 'The Restaurant', url: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=1200&q=80' },
+        { category: 'dining', caption: 'Rooftop Bar', url: 'https://images.unsplash.com/photo-1470337458703-46ad1756a187?w=1200&q=80' },
+        { category: 'dining', caption: 'Breakfast Service', url: 'https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=1200&q=80' },
+        { category: 'amenities', caption: 'Infinity Pool', url: 'https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?w=1200&q=80' },
+        { category: 'amenities', caption: 'The Spa', url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1200&q=80' },
+        { category: 'amenities', caption: 'Fitness Centre', url: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1200&q=80' },
+        { category: 'exterior', caption: 'The Facade', url: 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=1200&q=80' },
+        { category: 'exterior', caption: 'Grand Lobby', url: 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=1200&q=80' },
+        { category: 'exterior', caption: 'Garden Terrace', url: 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=1200&q=80' },
+        { category: 'events', caption: 'Banquet Hall', url: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1200&q=80' },
+        { category: 'events', caption: 'Conference Room', url: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=1200&q=80' },
+        { category: 'events', caption: 'Rooftop Celebration', url: 'https://images.unsplash.com/photo-1519225421980-715cb0215aed?w=1200&q=80' },
+      ];
+      for (let i = 0; i < galleryItems.length; i += 1) {
+        await db.galleryImage.create({ data: { ...galleryItems[i], sortOrder: i + 1 } });
+      }
+      created.push(`${galleryItems.length} gallery images`);
     }
-    created.push(`${galleryItems.length} gallery images`);
 
     // ---- Restaurant menu (placeholder — edit from Admin → Menu) ----
     if ((await db.menuCategory.count()) === 0) {
@@ -239,7 +249,10 @@ export async function GET() {
       created.push(`${menu.length} menu categories`);
     }
 
-    return NextResponse.json({ message: 'Seeded', created });
+    return NextResponse.json({
+      message: created.length ? 'Seeded' : 'Nothing to seed',
+      created,
+    });
   } catch (error) {
     console.error('Seed error:', error);
     const message = error instanceof Error ? error.message : 'Seed failed';

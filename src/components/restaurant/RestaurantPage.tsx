@@ -51,6 +51,7 @@ export default function RestaurantPage() {
 
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [query, setQuery] = useState('');
   const [vegOnly, setVegOnly] = useState(false);
@@ -60,11 +61,34 @@ export default function RestaurantPage() {
   const money = useCallback((value: number) => formatMoney(value, settings), [settings]);
 
   useEffect(() => {
-    fetch('/api/menu')
-      .then((res) => res.json())
-      .then((data) => setCategories(Array.isArray(data) ? data : []))
-      .catch(() => toast({ title: 'Could not load the menu', variant: 'destructive' }))
-      .finally(() => setLoading(false));
+    // The menu is fetched rather than server-rendered, so the failure modes are
+    // worth telling apart: a menu nobody has written yet is an empty list and
+    // gets the "being prepared" note below, while an endpoint that is actually
+    // broken says so — and says why — instead of looking like an empty menu.
+    const load = async () => {
+      try {
+        const res = await fetch('/api/menu');
+        const body = await res.text();
+        if (!res.ok) {
+          let detail = `The menu service returned ${res.status}.`;
+          try {
+            const parsed = JSON.parse(body);
+            if (parsed?.error) detail = String(parsed.error);
+          } catch { /* a proxy error page, not JSON — the status is the detail */ }
+          throw new Error(detail);
+        }
+        const data = JSON.parse(body);
+        setCategories(Array.isArray(data) ? data : []);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Menu fetch failed:', error);
+        setLoadError(detail);
+        toast({ title: 'Could not load the menu', description: detail, variant: 'destructive' });
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
   }, [toast]);
 
   const visible = useMemo(() => {
@@ -181,6 +205,17 @@ export default function RestaurantPage() {
         {loading ? (
           <div className="flex items-center justify-center gap-3 py-24 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" /> Loading the menu…
+          </div>
+        ) : loadError ? (
+          <div className="text-center py-24">
+            <p className="text-charcoal mb-2">The menu could not be loaded.</p>
+            <p className="text-sm text-muted-foreground mb-6">{loadError}</p>
+            <Button
+              onClick={() => window.location.reload()}
+              className="bg-gold text-white hover:bg-gold-dark tracking-widest uppercase text-xs px-6 py-2.5 rounded-none"
+            >
+              Try again
+            </Button>
           </div>
         ) : visible.length === 0 ? (
           <div className="text-center py-24 text-muted-foreground">
