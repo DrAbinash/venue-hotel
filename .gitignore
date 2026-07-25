@@ -57,3 +57,5 @@ server.log
 **/@eaDir/
 # Runtime uploads (served from /api/media)
 /public/uploads/
+# Local SQLite database (created and seeded on first boot)
+/db/custom.db

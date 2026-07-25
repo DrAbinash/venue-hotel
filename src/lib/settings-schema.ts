@@ -188,6 +188,28 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { key: 'minOrderValue', label: 'Minimum Order Value', type: 'number', default: '0' },
       { key: 'orderPayAtCounterEnabled', label: 'Allow Pay on Delivery / at Counter', type: 'boolean', default: 'true' },
       { key: 'orderChargeToRoomEnabled', label: 'Allow Charge to Room', type: 'boolean', default: 'true', help: 'Guests can add the bill to their room folio using a booking reference.' },
+
+      { key: 'tableReservationsEnabled', label: 'Allow Table Reservations', type: 'boolean', default: 'true', help: 'Guests can reserve a table online; requests appear in Admin → Table Bookings.' },
+      { key: 'reservationPartyMax', label: 'Largest Party Size', type: 'number', default: '12', help: 'Bigger groups are asked to call.' },
+      { key: 'reservationNote', label: 'Reservation Note', type: 'text', default: 'We hold reserved tables for 15 minutes past the booked time.' },
+    ],
+  },
+  {
+    key: 'cloudKitchen',
+    label: 'Cloud Kitchen',
+    description: 'A delivery-only kitchen channel. It works alongside the restaurant, or on its own with the restaurant switched off.',
+    section: 'settings',
+    fields: [
+      { key: 'cloudKitchenEnabled', label: 'Enable Cloud Kitchen', type: 'boolean', default: 'true', help: 'Adds a delivery-from-our-kitchen option to online ordering.' },
+      { key: 'cloudKitchenName', label: 'Kitchen Brand Name', type: 'text', default: 'The Venue Cloud Kitchen' },
+      { key: 'cloudKitchenTagline', label: 'Tagline', type: 'text', default: 'Our restaurant favourites, cooked in a dedicated delivery kitchen and brought to your door.' },
+      { key: 'cloudKitchenOpenTime', label: 'Delivery Opens', type: 'text', default: '10:00' },
+      { key: 'cloudKitchenCloseTime', label: 'Delivery Closes', type: 'text', default: '23:00' },
+      { key: 'cloudKitchenZones', label: 'Delivery Areas', type: 'text', default: 'City Center, Riverside, Business District', help: 'Comma-separated list shown to guests before they order.' },
+      { key: 'cloudKitchenDeliveryFee', label: 'Delivery Fee', type: 'number', default: '40' },
+      { key: 'cloudKitchenPackagingFee', label: 'Packaging Fee', type: 'number', default: '15' },
+      { key: 'cloudKitchenMinOrder', label: 'Minimum Order Value', type: 'number', default: '200' },
+      { key: 'cloudKitchenPrepNote', label: 'Delivery Note', type: 'text', default: 'Delivered hot, usually within 45 minutes.' },
     ],
   },
   {
@@ -252,6 +274,90 @@ export const SETTING_GROUPS: SettingGroup[] = [
       { key: 'roomsEyebrow', label: 'Eyebrow', type: 'text', default: 'Accommodation' },
       { key: 'roomsTitle', label: 'Heading', type: 'text', default: 'Rooms & Suites' },
       { key: 'roomsSubtitle', label: 'Sub-heading', type: 'textarea', default: 'Each room is a private retreat, appointed with considered detail and the quiet comfort of a home.' },
+    ],
+  },
+  {
+    key: 'dining',
+    label: 'Dining Showcase',
+    description: 'The dining band on the home page that leads guests to the restaurant and cloud kitchen.',
+    section: 'content',
+    fields: [
+      { key: 'diningEyebrow', label: 'Eyebrow', type: 'text', default: 'Culinary' },
+      { key: 'diningTitle', label: 'Heading', type: 'text', default: 'A Table Worth Travelling For' },
+      {
+        key: 'diningBody',
+        label: 'Body Copy',
+        type: 'textarea',
+        default:
+          'From a leisurely breakfast to a candle-lit dinner, our kitchen cooks with the season and serves with quiet precision. Order to your table, your room or your door — or reserve a table and let the evening unfold.',
+      },
+      { key: 'diningImage', label: 'Image', type: 'image', default: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=1600&q=80' },
+      { key: 'diningCta', label: 'Button Label', type: 'text', default: 'Explore the Restaurant' },
+      {
+        key: 'diningHighlights',
+        label: 'Highlights',
+        type: 'json',
+        default: JSON.stringify([
+          { title: 'All-Day Dining', description: 'Breakfast through late supper, seven days a week.' },
+          { title: 'Private Dining', description: 'A chef-curated table for celebrations and business.' },
+          { title: 'Home Delivery', description: 'Our cloud kitchen brings the menu to your door.' },
+        ]),
+        help: 'A list of { "title", "description" } pairs.',
+      },
+    ],
+  },
+  {
+    key: 'experiences',
+    label: 'Signature Experiences',
+    description: 'Curated experiences shown on the home page. Set an empty list to hide the section.',
+    section: 'content',
+    fields: [
+      { key: 'experiencesEyebrow', label: 'Eyebrow', type: 'text', default: 'Experiences' },
+      { key: 'experiencesTitle', label: 'Heading', type: 'text', default: 'Moments Made Here' },
+      { key: 'experiencesSubtitle', label: 'Sub-heading', type: 'textarea', default: 'A stay is only the beginning. These are the experiences our guests write home about.' },
+      {
+        key: 'experiencesList',
+        label: 'Experience Cards',
+        type: 'json',
+        default: JSON.stringify([
+          {
+            image: 'https://images.unsplash.com/photo-1470337458703-46ad1756a187?w=1200&q=80',
+            title: 'Sunset on the Rooftop',
+            description: 'A private table above the city, a tasting menu and the day ending on cue.',
+          },
+          {
+            image: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1200&q=80',
+            title: 'The Spa Ritual',
+            description: 'Two hours, warm stones and a therapist who has done this for twenty years.',
+          },
+          {
+            image: 'https://images.unsplash.com/photo-1602343168117-bb8ffe3e2e9f?w=1200&q=80',
+            title: 'The City by Morning',
+            description: 'A guided heritage walk that starts with coffee and ends at the flower market.',
+          },
+        ]),
+        help: 'A list of { "image", "title", "description" } objects.',
+      },
+    ],
+  },
+  {
+    key: 'recognition',
+    label: 'Awards & Recognition',
+    description: 'The slim recognition strip above the footer. Set an empty list to hide it.',
+    section: 'content',
+    fields: [
+      {
+        key: 'awardsList',
+        label: 'Awards',
+        type: 'json',
+        default: JSON.stringify([
+          { title: 'Travellers’ Choice', subtitle: 'Tripadvisor 2025' },
+          { title: 'Best Luxury Stay', subtitle: 'National Hospitality Awards' },
+          { title: '4.9 / 5 Guest Rating', subtitle: 'From 2,000+ verified reviews' },
+          { title: 'Green Key Certified', subtitle: 'Sustainable hospitality' },
+        ]),
+        help: 'A list of { "title", "subtitle" } pairs.',
+      },
     ],
   },
   {

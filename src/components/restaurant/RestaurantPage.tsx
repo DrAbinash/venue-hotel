@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
-  Beef, Cake, Clock, Coffee, CupSoda, Flame, IceCream, Leaf, Loader2, Pizza, Salad,
-  Sandwich, Search, ShoppingBag, Soup, Utensils, Wheat,
+  Beef, Cake, CalendarCheck, ChefHat, Clock, Coffee, CupSoda, Flame, IceCream, Leaf, Loader2,
+  MapPin, PackageSearch, Pizza, Salad, Sandwich, Search, ShoppingBag, Soup, Utensils, Wheat,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,8 @@ import { bool, text } from '@/lib/content';
 import { parseOptions, startingPrice, type MenuSize } from '@/lib/menu';
 import ItemDialog from '@/components/restaurant/ItemDialog';
 import CartSheet from '@/components/restaurant/CartSheet';
+import TrackOrderDialog from '@/components/restaurant/TrackOrderDialog';
+import ReserveTableDialog from '@/components/restaurant/ReserveTableDialog';
 import type { MenuCategory, MenuItem } from '@/lib/types';
 
 /** Category icons, chosen in Admin → Restaurant. */
@@ -48,6 +50,10 @@ export default function RestaurantPage() {
   const cartCount = useOrderStore((state) => state.count());
   const cartSubtotal = useOrderStore((state) => state.subtotal());
   const setCartOpen = useOrderStore((state) => state.setCartOpen);
+  const lastOrder = useOrderStore((state) => state.lastOrder);
+  const trackOpen = useOrderStore((state) => state.trackOpen);
+  const setTrackOpen = useOrderStore((state) => state.setTrackOpen);
+  const [reserveOpen, setReserveOpen] = useState(false);
 
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -120,7 +126,15 @@ export default function RestaurantPage() {
     });
   };
 
-  if (!bool(settings, 'restaurantEnabled')) {
+  const restaurantOn = bool(settings, 'restaurantEnabled');
+  const cloudOn = bool(settings, 'cloudKitchenEnabled');
+  // The cloud kitchen can carry the whole page while the restaurant is closed
+  // to online orders — that is the point of a delivery-only kitchen.
+  const cloudOnly = !restaurantOn && cloudOn;
+  const reservationsOn = restaurantOn && bool(settings, 'tableReservationsEnabled');
+  const cloudZones = text(settings, 'cloudKitchenZones').trim();
+
+  if (!restaurantOn && !cloudOn) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center px-4 text-center">
         <div>
@@ -137,22 +151,72 @@ export default function RestaurantPage() {
   return (
     <div className="pb-28 lg:pb-12">
       {/* ------------------------------------------------------------ header */}
-      <section className="relative h-56 sm:h-72 overflow-hidden">
+      <section className="relative h-64 sm:h-80 overflow-hidden">
         <div
           className="absolute inset-0 bg-cover bg-center bg-charcoal"
           style={{ backgroundImage: `url(${text(settings, 'restaurantHeroImage')})` }}
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/30" />
         <div className="relative z-10 h-full max-w-7xl mx-auto px-4 flex flex-col justify-end pb-8 text-white">
-          <p className="text-xs tracking-[0.4em] uppercase text-gold mb-2">{text(settings, 'restaurantEyebrow')}</p>
-          <h1 className="text-3xl sm:text-5xl font-extralight tracking-wide">{text(settings, 'restaurantName')}</h1>
-          <p className="text-sm text-white/70 mt-2 max-w-xl">{text(settings, 'restaurantTagline')}</p>
+          <p className="text-xs tracking-[0.4em] uppercase text-gold mb-2">
+            {cloudOnly ? 'Cloud Kitchen' : text(settings, 'restaurantEyebrow')}
+          </p>
+          <h1 className="text-3xl sm:text-5xl font-extralight tracking-wide">
+            {cloudOnly ? text(settings, 'cloudKitchenName') : text(settings, 'restaurantName')}
+          </h1>
+          <p className="text-sm text-white/70 mt-2 max-w-xl">
+            {cloudOnly ? text(settings, 'cloudKitchenTagline') : text(settings, 'restaurantTagline')}
+          </p>
           <p className="flex items-center gap-2 text-xs text-white/60 mt-3">
             <Clock className="w-3.5 h-3.5" />
-            {text(settings, 'restaurantOpenTime')} – {text(settings, 'restaurantCloseTime')} · {text(settings, 'restaurantPrepNote')}
+            {cloudOnly
+              ? `${text(settings, 'cloudKitchenOpenTime')} – ${text(settings, 'cloudKitchenCloseTime')} · ${text(settings, 'cloudKitchenPrepNote')}`
+              : `${text(settings, 'restaurantOpenTime')} – ${text(settings, 'restaurantCloseTime')} · ${text(settings, 'restaurantPrepNote')}`}
           </p>
+
+          <div className="flex flex-wrap gap-2 mt-4">
+            {reservationsOn && (
+              <Button
+                onClick={() => setReserveOpen(true)}
+                className="h-10 px-5 bg-gold hover:bg-gold-dark text-white text-[11px] tracking-[0.2em] uppercase rounded-none"
+              >
+                <CalendarCheck className="w-3.5 h-3.5 mr-1.5" /> Reserve a Table
+              </Button>
+            )}
+            <Button
+              onClick={() => setTrackOpen(true)}
+              variant="outline"
+              className="h-10 px-5 border-white/40 bg-transparent text-white hover:bg-white/10 hover:text-white text-[11px] tracking-[0.2em] uppercase rounded-none"
+            >
+              <PackageSearch className="w-3.5 h-3.5 mr-1.5" /> Track Order
+            </Button>
+          </div>
         </div>
       </section>
+
+      {/* ----------------------------------------------- cloud kitchen band */}
+      {cloudOn && (
+        <div className="bg-charcoal text-white">
+          <div className="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="flex items-center gap-2 text-gold tracking-widest uppercase">
+              <ChefHat className="w-4 h-4" />
+              {cloudOnly ? 'Home Delivery' : text(settings, 'cloudKitchenName')}
+            </span>
+            {cloudZones && (
+              <span className="flex items-center gap-1.5 text-white/70">
+                <MapPin className="w-3.5 h-3.5 text-gold/70" /> Delivering to {cloudZones}
+              </span>
+            )}
+            <span className="flex items-center gap-1.5 text-white/70">
+              <Clock className="w-3.5 h-3.5 text-gold/70" />
+              {text(settings, 'cloudKitchenOpenTime')} – {text(settings, 'cloudKitchenCloseTime')}
+            </span>
+            {!cloudOnly && (
+              <span className="text-white/50">Choose “Cloud Kitchen” at checkout for doorstep delivery.</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ------------------------------------------------- search + category rail */}
       <div className="sticky top-16 lg:top-20 z-30 bg-white/95 backdrop-blur-md border-b border-gold/15">
@@ -338,6 +402,16 @@ export default function RestaurantPage() {
 
       <ItemDialog item={selected} settings={settings} onClose={() => setSelected(null)} />
       <CartSheet />
+      <TrackOrderDialog
+        open={trackOpen}
+        onClose={() => setTrackOpen(false)}
+        settings={settings}
+        initialRef={lastOrder?.ref}
+        initialPhone={lastOrder?.phone}
+      />
+      {reservationsOn && (
+        <ReserveTableDialog open={reserveOpen} onClose={() => setReserveOpen(false)} settings={settings} />
+      )}
     </div>
   );
 }

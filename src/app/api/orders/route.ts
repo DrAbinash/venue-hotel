@@ -9,12 +9,13 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-const VALID_TYPES: OrderType[] = ['dine_in', 'room_service', 'takeaway', 'delivery'];
+const VALID_TYPES: OrderType[] = ['dine_in', 'room_service', 'takeaway', 'delivery', 'cloud_kitchen'];
 const TYPE_SETTING: Record<OrderType, string> = {
   dine_in: 'orderDineInEnabled',
   room_service: 'orderRoomServiceEnabled',
   takeaway: 'orderTakeawayEnabled',
   delivery: 'orderDeliveryEnabled',
+  cloud_kitchen: 'cloudKitchenEnabled',
 };
 
 async function uniqueOrderRef(): Promise<string> {
@@ -54,7 +55,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const settings = await getSettings();
 
-    if (!settingBool(settings, 'restaurantEnabled')) {
+    const restaurantOpen = settingBool(settings, 'restaurantEnabled');
+    const cloudKitchenOpen = settingBool(settings, 'cloudKitchenEnabled');
+    if (!restaurantOpen && !cloudKitchenOpen) {
       return NextResponse.json({ error: 'Online ordering is currently closed.' }, { status: 503 });
     }
 
@@ -62,7 +65,13 @@ export async function POST(request: NextRequest) {
     if (!VALID_TYPES.includes(orderType)) {
       return NextResponse.json({ error: 'Choose a valid order type.' }, { status: 400 });
     }
-    if (!settingBool(settings, TYPE_SETTING[orderType])) {
+    // The cloud kitchen runs on its own switch; the restaurant types need the
+    // restaurant open as well as their individual toggle.
+    const channelOpen =
+      orderType === 'cloud_kitchen'
+        ? cloudKitchenOpen
+        : restaurantOpen && settingBool(settings, TYPE_SETTING[orderType]);
+    if (!channelOpen) {
       return NextResponse.json({ error: 'That order type is not available right now.' }, { status: 400 });
     }
 
@@ -79,7 +88,10 @@ export async function POST(request: NextRequest) {
     if (orderType === 'room_service' && !String(body.roomNumber ?? '').trim()) {
       return NextResponse.json({ error: 'Please enter your room number.' }, { status: 400 });
     }
-    if (orderType === 'delivery' && String(body.deliveryAddress ?? '').trim().length < 10) {
+    if (
+      (orderType === 'delivery' || orderType === 'cloud_kitchen') &&
+      String(body.deliveryAddress ?? '').trim().length < 10
+    ) {
       return NextResponse.json({ error: 'Please enter a delivery address.' }, { status: 400 });
     }
 
@@ -146,9 +158,14 @@ export async function POST(request: NextRequest) {
       packagingFee: settingNumber(settings, 'packagingFee', 0),
       deliveryFee: settingNumber(settings, 'deliveryFee', 0),
       roomServiceFee: settingNumber(settings, 'roomServiceFee', 0),
+      cloudKitchenPackagingFee: settingNumber(settings, 'cloudKitchenPackagingFee', 0),
+      cloudKitchenDeliveryFee: settingNumber(settings, 'cloudKitchenDeliveryFee', 0),
     });
 
-    const minOrder = settingNumber(settings, 'minOrderValue', 0);
+    const minOrder =
+      orderType === 'cloud_kitchen'
+        ? settingNumber(settings, 'cloudKitchenMinOrder', settingNumber(settings, 'minOrderValue', 0))
+        : settingNumber(settings, 'minOrderValue', 0);
     if (minOrder > 0 && totals.subtotal < minOrder) {
       return NextResponse.json(
         { error: `Orders start at ${settings.currencySymbol || ''}${minOrder}. Please add a little more.` },

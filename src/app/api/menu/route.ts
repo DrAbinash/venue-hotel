@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { isAdminRequest, requireAdmin } from '@/lib/auth';
+import { healMissingTables, isMissingTableError } from '@/lib/ensure-schema';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,9 +23,9 @@ const asNumber = (value: unknown, fallback: number) => {
  * switch a sold-out dish back on.
  */
 export async function GET() {
-  try {
-    const admin = await isAdminRequest();
-    const categories = await db.menuCategory.findMany({
+  const admin = await isAdminRequest();
+  const query = () =>
+    db.menuCategory.findMany({
       where: admin ? undefined : { isActive: true },
       orderBy: { sortOrder: 'asc' },
       include: {
@@ -34,9 +35,22 @@ export async function GET() {
         },
       },
     });
-    return NextResponse.json(categories);
+
+  try {
+    return NextResponse.json(await query());
   } catch (error) {
-    console.error('Menu fetch error:', error);
+    // A database from before the restaurant release has no menu tables at
+    // all. Heal the schema and answer this same request instead of leaving
+    // the module dead until someone runs `prisma db push` by hand.
+    if (isMissingTableError(error) && (await healMissingTables())) {
+      try {
+        return NextResponse.json(await query());
+      } catch (retryError) {
+        console.error('Menu fetch failed after schema heal:', retryError);
+      }
+    } else {
+      console.error('Menu fetch error:', error);
+    }
     return NextResponse.json({ error: 'Failed to load the menu' }, { status: 500 });
   }
 }

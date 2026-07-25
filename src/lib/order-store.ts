@@ -17,6 +17,13 @@ interface OrderStore {
 
   cartOpen: boolean;
   setCartOpen: (open: boolean) => void;
+
+  /** The most recent order, so tracking it is one tap rather than a form. */
+  lastOrder: { ref: string; phone: string } | null;
+  setLastOrder: (ref: string, phone: string) => void;
+
+  trackOpen: boolean;
+  setTrackOpen: (open: boolean) => void;
 }
 
 /**
@@ -68,10 +75,16 @@ export const useOrderStore = create<OrderStore>()(
 
       cartOpen: false,
       setCartOpen: (cartOpen) => set({ cartOpen }),
+
+      lastOrder: null,
+      setLastOrder: (ref, phone) => set({ lastOrder: { ref, phone } }),
+
+      trackOpen: false,
+      setTrackOpen: (trackOpen) => set({ trackOpen }),
     }),
     {
       name: 'venue-food-cart',
-      partialize: (state) => ({ lines: state.lines, orderType: state.orderType }),
+      partialize: (state) => ({ lines: state.lines, orderType: state.orderType, lastOrder: state.lastOrder }),
     },
   ),
 );

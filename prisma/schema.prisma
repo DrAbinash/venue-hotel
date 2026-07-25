@@ -177,7 +177,7 @@ model MenuItem {
 model FoodOrder {
   id             String          @id @default(cuid())
   orderRef       String          @unique
-  /// dine_in | room_service | takeaway | delivery
+  /// dine_in | room_service | takeaway | delivery | cloud_kitchen
   orderType      String          @default("dine_in")
   tableNumber    String?
   roomNumber     String?
@@ -226,6 +226,30 @@ model FoodOrderItem {
   notes      String?
 
   @@index([orderId])
+}
+
+/// A dining reservation — a table held for a party, distinct from a food
+/// order. Date and time are stored as the guest chose them ("2026-08-01",
+/// "19:30"); a single-property site has no need for timezone arithmetic.
+model TableReservation {
+  id             String   @id @default(cuid())
+  reservationRef String   @unique
+  guestName      String
+  guestPhone     String
+  guestEmail     String?
+  partySize      Int      @default(2)
+  date           String
+  time           String
+  occasion       String?
+  notes          String?
+  /// requested | confirmed | seated | completed | cancelled | no_show
+  status         String   @default("requested")
+  internalNotes  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([date])
+  @@index([status])
 }
 
 model MediaAsset {

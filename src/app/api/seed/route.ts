@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { GROUP_OF_KEY, SETTING_DEFAULTS } from '@/lib/settings-schema';
+import { healMissingTables, isMissingTableError } from '@/lib/ensure-schema';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,27 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET() {
   try {
+    return NextResponse.json(await runSeed());
+  } catch (error) {
+    // A database created by an older release may be missing whole tables.
+    // Push the schema and run the same seed again before giving up.
+    if (isMissingTableError(error) && (await healMissingTables())) {
+      try {
+        return NextResponse.json(await runSeed());
+      } catch (retryError) {
+        console.error('Seed failed after schema heal:', retryError);
+        const message = retryError instanceof Error ? retryError.message : 'Seed failed';
+        return NextResponse.json({ error: message }, { status: 500 });
+      }
+    }
+    console.error('Seed error:', error);
+    const message = error instanceof Error ? error.message : 'Seed failed';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+async function runSeed(): Promise<{ message: string; created: string[] }> {
+  {
     const created: string[] = [];
 
     // ---- Settings: fill in any key that does not exist yet. ----
@@ -249,13 +271,9 @@ export async function GET() {
       created.push(`${menu.length} menu categories`);
     }
 
-    return NextResponse.json({
+    return {
       message: created.length ? 'Seeded' : 'Nothing to seed',
       created,
-    });
-  } catch (error) {
-    console.error('Seed error:', error);
-    const message = error instanceof Error ? error.message : 'Seed failed';
-    return NextResponse.json({ error: message }, { status: 500 });
+    };
   }
 }

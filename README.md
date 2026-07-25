@@ -1,8 +1,9 @@
 # The Venue — Hotel & Restaurant Platform
 
 A hotel website with a real booking engine, an in-house restaurant with online
-ordering, online payments through **Razorpay** and **ICICI Bank Eazypay**, and
-an admin panel that owns every word, price and photograph on the public site.
+ordering and table reservations, a delivery-only **cloud kitchen** channel,
+online payments through **Razorpay** and **ICICI Bank Eazypay**, and an admin
+panel that owns every word, price and photograph on the public site.
 
 Built with Next.js (App Router), Prisma + SQLite, Tailwind and shadcn/ui.
 It runs from a single container with no external database.
@@ -79,16 +80,33 @@ in that file — it then appears in the panel automatically on the next boot.
 
 Touch-first ordering sized for tablets and phones: a horizontally scrolling
 category rail, tiles two-across on a phone and up to four on a tablet, sizes
-and add-ons as large tap targets, and a sticky order bar.
+and add-ons as large tap targets, and a sticky order bar. The page lives at
+**/restaurant** — a link that can be printed on a table tent or shared.
 
 Dine-in, room service, takeaway and delivery can each be switched on or off,
 with their own fees. Room-service orders can carry a booking reference so the
 bill is tied to the guest's stay. The kitchen board (**Admin → Food Orders**)
 advances an order through placed → accepted → preparing → ready → served, and
-refreshes itself during service.
+refreshes itself during service. Guests follow the same journey from **Track
+Order** — reference plus phone number, no account needed.
+
+**Table reservations.** Guests request a table (date, time, party size,
+occasion); the host desk confirms from **Admin → Table Bookings**. Switch off
+in settings if the dining room takes no bookings.
+
+**Cloud kitchen.** A delivery-only channel with its own brand name, hours,
+delivery areas, fees and minimum order (**Admin → Settings → Cloud Kitchen**).
+It runs alongside the restaurant, or carries the whole ordering page by itself
+when the restaurant is closed to online orders — the point of a cloud kitchen.
 
 Like the hotel side, the cart is priced on the server — sizes, add-ons and
 availability are all re-resolved from the menu when the order is placed.
+
+**Self-healing installs.** A database created by an older release has no
+restaurant tables at all. Rather than failing until someone runs `prisma db
+push` by hand, the menu, seed and reservation routes detect the missing
+tables, push the schema through the bundled Prisma CLI once, and answer the
+same request.
 
 ---
 
