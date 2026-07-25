@@ -3,19 +3,22 @@ const p = new PrismaClient();
 
 (async () => {
   try {
+    console.log('Seed: Connecting to database...');
     const count = await p.room.count();
     if (count > 0) {
-      console.log('Database already has data — skipping seed.');
+      console.log('Seed: Database already has ' + count + ' rooms — skipping seed.');
       await p.$disconnect();
       return;
     }
 
-    console.log('Database empty — seeding default data...');
+    console.log('Seed: Database empty — seeding default data...');
 
     const f1 = await p.floor.create({ data: { name: 'Ground Floor', number: 1, sortOrder: 1 } });
     const f2 = await p.floor.create({ data: { name: 'First Floor', number: 2, sortOrder: 2 } });
     const f3 = await p.floor.create({ data: { name: 'Second Floor', number: 3, sortOrder: 3 } });
     const f4 = await p.floor.create({ data: { name: 'Third Floor - Premium', number: 4, sortOrder: 4 } });
+
+    console.log('Seed: Created 4 floors.');
 
     const rooms = [
       { type: 'Deluxe Room', price: 199, bed: 'King', size: '45 sqm', floor: f1, guests: 2, amenities: ['Free WiFi','Air Conditioning','Mini Bar','Room Service','Flat Screen TV','Safe'] },
@@ -43,6 +46,7 @@ const p = new PrismaClient();
           sortOrder: i + 1,
         },
       });
+      console.log('Seed: Created room ' + num);
     }
 
     const settings = [
@@ -62,9 +66,10 @@ const p = new PrismaClient();
       await p.hotelSetting.upsert({ where: { key: s.key }, update: { value: s.value }, create: s });
     }
 
-    console.log('Seed complete!');
+    console.log('Seed: Complete! Created 4 rooms, 10 settings.');
   } catch (err) {
     console.error('Seed error:', err.message);
+    console.error('Seed error stack:', err.stack);
   }
   await p.$disconnect();
 })();

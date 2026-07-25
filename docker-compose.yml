@@ -13,16 +13,16 @@ services:
       - venue-hotel-data:/app/data
       - venue-hotel-uploads:/app/public/uploads
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD-SHELL", "node -e \"try { require('http').get('http://localhost:3000/', (r) => { process.exit(r.statusCode === 200 ? 0 : 1); }).on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 5000); } catch(e) { process.exit(1); }\""]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 5
+      start_period: 60s
     logging:
       driver: json-file
       options:
         max-size: "10m"
-        max-file: "3"
+        max-file: "5"
 
 volumes:
   venue-hotel-data:

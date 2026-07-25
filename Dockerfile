@@ -36,28 +36,29 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 nextjs
+# Create user with specific UID/GID that matches Synology's Docker volume permissions
+# Synology volumes are typically owned by root, so we keep the container running as root
+# to avoid permission issues with mounted volumes
+RUN mkdir -p /app/data /app/public/uploads
 
-RUN mkdir -p /app/data && chown -R nextjs:nodejs /app/data
-RUN mkdir -p /app/public/uploads && chown -R nextjs:nodejs /app/public/uploads
-
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public
 
 # Prisma client + CLI (needed for db push on startup)
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
 # Seed script
-COPY --from=builder --chown=nextjs:nodejs /app/scripts/docker-seed.js /app/docker-seed.js
+COPY --from=builder /app/scripts/docker-seed.js /app/docker-seed.js
 
-COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
+# Also copy node_modules needed by the seed script (uuid etc.)
+COPY --from=builder /app/node_modules/uuid ./node_modules/uuid 2>/dev/null || true
+
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
-USER nextjs
 EXPOSE 3000
 CMD ["./docker-entrypoint.sh"]
