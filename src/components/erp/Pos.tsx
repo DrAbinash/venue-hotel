@@ -290,7 +290,7 @@ function NewOrderDialog({ tableCount, inHouse, onClose, onDone }: {
           customerName: stay?.guestName ?? form.customerName,
           customerPhone: form.customerPhone,
           notes: form.notes || null,
-          cart: cart.map((r) => ({ menuItemId: r.menuItemId, quantity: r.quantity })),
+          items: cart.map((r) => ({ menuItemId: r.menuItemId, quantity: r.quantity })),
         }),
       });
       notify('Order placed');

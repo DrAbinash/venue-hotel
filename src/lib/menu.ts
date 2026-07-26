@@ -13,13 +13,20 @@ export interface MenuAddon {
   price: number;
 }
 
-export type OrderType = 'dine_in' | 'room_service' | 'takeaway' | 'delivery';
+export type OrderType = 'dine_in' | 'room_service' | 'takeaway' | 'delivery' | 'cloud_kitchen';
 
+/**
+ * The first four types belong to the in-house restaurant and are gated by
+ * `restaurantEnabled` plus their own switch. `cloud_kitchen` is a delivery-only
+ * channel with its own fees and hours, and stays available even when the
+ * restaurant itself is closed to online orders.
+ */
 export const ORDER_TYPES: { id: OrderType; label: string; settingKey: string; hint: string }[] = [
   { id: 'dine_in', label: 'Dine In', settingKey: 'orderDineInEnabled', hint: 'Served to your table' },
   { id: 'room_service', label: 'Room Service', settingKey: 'orderRoomServiceEnabled', hint: 'Brought to your room' },
   { id: 'takeaway', label: 'Takeaway', settingKey: 'orderTakeawayEnabled', hint: 'Collect at the counter' },
   { id: 'delivery', label: 'Delivery', settingKey: 'orderDeliveryEnabled', hint: 'To your address' },
+  { id: 'cloud_kitchen', label: 'Cloud Kitchen', settingKey: 'cloudKitchenEnabled', hint: 'Delivered from our cloud kitchen' },
 ];
 
 export interface CartLine {
@@ -52,6 +59,9 @@ export interface OrderChargeRules {
   packagingFee: number;
   deliveryFee: number;
   roomServiceFee: number;
+  /** Cloud kitchen fees; fall back to the restaurant fees when unset. */
+  cloudKitchenPackagingFee?: number;
+  cloudKitchenDeliveryFee?: number;
 }
 
 export interface OrderTotals {
@@ -72,9 +82,21 @@ export function computeOrderTotals(
 ): OrderTotals {
   const subtotal = round2(lines.reduce((sum, line) => sum + lineTotal(line), 0));
 
+  const cloudPackaging = rules.cloudKitchenPackagingFee ?? rules.packagingFee;
+  const cloudDelivery = rules.cloudKitchenDeliveryFee ?? rules.deliveryFee;
+
   const packagingFee =
-    orderType === 'takeaway' || orderType === 'delivery' ? round2(Math.max(0, rules.packagingFee)) : 0;
-  const deliveryFee = orderType === 'delivery' ? round2(Math.max(0, rules.deliveryFee)) : 0;
+    orderType === 'takeaway' || orderType === 'delivery'
+      ? round2(Math.max(0, rules.packagingFee))
+      : orderType === 'cloud_kitchen'
+        ? round2(Math.max(0, cloudPackaging))
+        : 0;
+  const deliveryFee =
+    orderType === 'delivery'
+      ? round2(Math.max(0, rules.deliveryFee))
+      : orderType === 'cloud_kitchen'
+        ? round2(Math.max(0, cloudDelivery))
+        : 0;
   const serviceFee = orderType === 'room_service' ? round2(Math.max(0, rules.roomServiceFee)) : 0;
 
   const discount = round2(Math.min(Math.max(0, discountAmount), subtotal));

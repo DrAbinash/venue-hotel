@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { BedDouble, Bike, Clock, Loader2, RefreshCw, Store, Utensils } from 'lucide-react';
+import { BedDouble, Bike, ChefHat, Clock, Loader2, RefreshCw, Store, Utensils } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -19,6 +19,7 @@ const TYPE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   room_service: BedDouble,
   takeaway: Store,
   delivery: Bike,
+  cloud_kitchen: ChefHat,
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -178,6 +179,11 @@ export default function AdminOrders() {
                     );
                   })}
 
+                  {order.deliveryAddress && (
+                    <p className="text-xs text-muted-foreground border-l-2 border-gold/30 pl-2 mt-2">
+                      Deliver to: {order.deliveryAddress}
+                    </p>
+                  )}
                   {order.notes && (
                     <p className="text-xs text-gold/90 italic border-l-2 border-gold/30 pl-2 mt-2">{order.notes}</p>
                   )}

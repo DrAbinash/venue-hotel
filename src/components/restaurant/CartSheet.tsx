@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Banknote, BedDouble, Bike, CheckCircle, CreditCard, Landmark, Loader2, Minus, Plus,
+  Banknote, BedDouble, Bike, CheckCircle, ChefHat, CreditCard, Landmark, Loader2, Minus, Plus,
   ShoppingBag, Store, Trash2, Utensils,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,11 @@ const TYPE_ICON: Record<OrderType, React.ComponentType<{ className?: string }>> 
   room_service: BedDouble,
   takeaway: Store,
   delivery: Bike,
+  cloud_kitchen: ChefHat,
 };
+
+/** Order types that end at the guest's own address. */
+const DELIVERY_TYPES: OrderType[] = ['delivery', 'cloud_kitchen'];
 
 const GATEWAY_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   razorpay: CreditCard,
@@ -41,7 +45,10 @@ const GATEWAY_ICON: Record<string, React.ComponentType<{ className?: string }>> 
 export default function CartSheet() {
   const { settings } = useHotelStore();
   const { toast } = useToast();
-  const { lines, orderType, setOrderType, setQuantity, remove, clear, cartOpen, setCartOpen } = useOrderStore();
+  const {
+    lines, orderType, setOrderType, setQuantity, remove, clear, cartOpen, setCartOpen,
+    setLastOrder, setTrackOpen,
+  } = useOrderStore();
 
   const [config, setConfig] = useState<PaymentConfig | null>(null);
   const [placing, setPlacing] = useState(false);
@@ -67,10 +74,14 @@ export default function CartSheet() {
       .catch(() => undefined);
   }, []);
 
-  const enabledTypes = useMemo(
-    () => ORDER_TYPES.filter((type) => bool(settings, type.settingKey)),
-    [settings],
-  );
+  const enabledTypes = useMemo(() => {
+    const restaurantOpen = bool(settings, 'restaurantEnabled');
+    return ORDER_TYPES.filter((type) =>
+      type.id === 'cloud_kitchen'
+        ? bool(settings, 'cloudKitchenEnabled')
+        : restaurantOpen && bool(settings, type.settingKey),
+    );
+  }, [settings]);
 
   // Keep the selected fulfilment type valid if an admin switches one off.
   useEffect(() => {
@@ -86,9 +97,19 @@ export default function CartSheet() {
         packagingFee: num(settings, 'packagingFee', 0),
         deliveryFee: num(settings, 'deliveryFee', 0),
         roomServiceFee: num(settings, 'roomServiceFee', 0),
+        cloudKitchenPackagingFee: num(settings, 'cloudKitchenPackagingFee', 0),
+        cloudKitchenDeliveryFee: num(settings, 'cloudKitchenDeliveryFee', 0),
       }),
     [lines, orderType, settings],
   );
+
+  // Mirror of the server's minimum-order rule, so the guest hears about it
+  // while they can still add a dish rather than after the order bounces.
+  const minOrder =
+    orderType === 'cloud_kitchen'
+      ? num(settings, 'cloudKitchenMinOrder', num(settings, 'minOrderValue', 0))
+      : num(settings, 'minOrderValue', 0);
+  const belowMinimum = minOrder > 0 && totals.subtotal < minOrder;
 
   const onlineMethods = config?.methods.filter((option) => option.online) ?? [];
   const payLaterAllowed = bool(settings, 'orderPayAtCounterEnabled');
@@ -168,6 +189,8 @@ export default function CartSheet() {
       const order: FoodOrder = await res.json();
       if (!res.ok) throw new Error((order as unknown as { error?: string }).error || 'Could not place the order.');
 
+      setLastOrder(order.orderRef, form.customerPhone);
+
       if (method === 'later') {
         if (payLaterAllowed) {
           await fetch('/api/payments/create', {
@@ -195,11 +218,12 @@ export default function CartSheet() {
 
   const canSubmit =
     lines.length > 0 &&
+    !belowMinimum &&
     form.customerName.trim().length >= 2 &&
     form.customerPhone.replace(/\D/g, '').length >= 7 &&
     (orderType !== 'dine_in' || form.tableNumber.trim().length > 0) &&
     (orderType !== 'room_service' || form.roomNumber.trim().length > 0) &&
-    (orderType !== 'delivery' || form.deliveryAddress.trim().length >= 10);
+    (!DELIVERY_TYPES.includes(orderType) || form.deliveryAddress.trim().length >= 10);
 
   return (
     <Sheet
@@ -229,10 +253,19 @@ export default function CartSheet() {
               {placed.tableNumber && <div className="flex justify-between"><span className="text-muted-foreground">Table</span><span>{placed.tableNumber}</span></div>}
               {placed.roomNumber && <div className="flex justify-between"><span className="text-muted-foreground">Room</span><span>{placed.roomNumber}</span></div>}
             </div>
-            <p className="text-sm text-muted-foreground mt-5">{text(settings, 'restaurantPrepNote')}</p>
+            <p className="text-sm text-muted-foreground mt-5">
+              {text(settings, placed.orderType === 'cloud_kitchen' ? 'cloudKitchenPrepNote' : 'restaurantPrepNote')}
+            </p>
+            <Button
+              onClick={() => { setPlaced(null); setCartOpen(false); setTrackOpen(true); }}
+              variant="outline"
+              className="w-full mt-6 h-12 border-gold/30 text-charcoal text-xs tracking-[0.2em] uppercase rounded-none"
+            >
+              Track This Order
+            </Button>
             <Button
               onClick={() => { setPlaced(null); setCartOpen(false); }}
-              className="w-full mt-6 h-12 bg-gold hover:bg-gold-dark text-white text-xs tracking-[0.2em] uppercase rounded-none"
+              className="w-full mt-3 h-12 bg-gold hover:bg-gold-dark text-white text-xs tracking-[0.2em] uppercase rounded-none"
             >
               Done
             </Button>
@@ -380,7 +413,7 @@ export default function CartSheet() {
                   </>
                 )}
 
-                {orderType === 'delivery' && (
+                {DELIVERY_TYPES.includes(orderType) && (
                   <div className="space-y-1.5">
                     <Label className="text-xs tracking-widest uppercase text-muted-foreground">Delivery Address *</Label>
                     <Textarea
@@ -389,6 +422,11 @@ export default function CartSheet() {
                       rows={3}
                       className="border-gold/20 bg-cream/30 rounded-none resize-none text-base"
                     />
+                    {orderType === 'cloud_kitchen' && text(settings, 'cloudKitchenZones').trim() && (
+                      <p className="text-[11px] text-muted-foreground">
+                        We deliver to: {text(settings, 'cloudKitchenZones')}
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -411,7 +449,7 @@ export default function CartSheet() {
                   ...(payLaterAllowed
                     ? [{
                         id: 'later' as const,
-                        label: orderType === 'delivery' ? 'Pay on Delivery' : 'Pay at the Counter',
+                        label: DELIVERY_TYPES.includes(orderType) ? 'Pay on Delivery' : 'Pay at the Counter',
                         description: chargeToRoomAllowed && form.bookingRef ? 'Added to your room folio' : 'Settle when your order arrives',
                       }]
                     : []),
@@ -440,6 +478,11 @@ export default function CartSheet() {
 
             {/* ---- totals + submit ---- */}
             <div className="border-t border-gold/15 p-5 space-y-3 bg-white">
+              {belowMinimum && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2">
+                  Orders start at {money(minOrder)} — add {money(minOrder - totals.subtotal)} more to continue.
+                </p>
+              )}
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{money(totals.subtotal)}</span></div>
                 {totals.packagingFee > 0 && (

@@ -17,6 +17,7 @@ import AdminGallery from '@/components/admin/AdminGallery';
 import AdminMedia from '@/components/admin/AdminMedia';
 import AdminMenu from '@/components/admin/AdminMenu';
 import AdminOrders from '@/components/admin/AdminOrders';
+import AdminReservations from '@/components/admin/AdminReservations';
 import AdminPayments from '@/components/admin/AdminPayments';
 import AdminContent from '@/components/admin/AdminContent';
 import AdminSettings from '@/components/admin/AdminSettings';
@@ -27,6 +28,7 @@ const TABS: { key: string; label: string; icon: React.ReactNode; group: string }
   { key: 'rooms', label: 'Rooms', icon: <BedDouble className="w-4 h-4" />, group: 'Hotel' },
   { key: 'floors', label: 'Floors', icon: <Layers className="w-4 h-4" />, group: 'Hotel' },
   { key: 'orders', label: 'Food Orders', icon: <UtensilsCrossed className="w-4 h-4" />, group: 'Restaurant' },
+  { key: 'reservations', label: 'Table Bookings', icon: <CalendarCheck className="w-4 h-4" />, group: 'Restaurant' },
   { key: 'menu', label: 'Menu', icon: <Type className="w-4 h-4" />, group: 'Restaurant' },
   { key: 'payments', label: 'Payments', icon: <Wallet className="w-4 h-4" />, group: 'Money' },
   { key: 'gallery', label: 'Gallery', icon: <ImageIcon className="w-4 h-4" />, group: 'Content' },
@@ -41,6 +43,7 @@ const TAB_COMPONENTS: Record<string, React.FC> = {
   rooms: AdminRooms,
   floors: AdminFloors,
   orders: AdminOrders,
+  reservations: AdminReservations,
   menu: AdminMenu,
   payments: AdminPayments,
   gallery: AdminGallery,

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useHotelStore } from '@/lib/store';
+import { useHotelStore, type View } from '@/lib/store';
+import { VIEW_PATHS } from '@/lib/views';
 import { list, text, type StatItem } from '@/lib/content';
 import Navbar from '@/components/hotel/Navbar';
 import HeroSection from '@/components/hotel/HeroSection';
@@ -10,6 +11,10 @@ import BookingBar from '@/components/hotel/BookingBar';
 import RoomsSection from '@/components/hotel/RoomsSection';
 import GallerySection from '@/components/hotel/GallerySection';
 import AmenitiesSection from '@/components/hotel/AmenitiesSection';
+import DiningSection from '@/components/hotel/DiningSection';
+import ExperiencesSection from '@/components/hotel/ExperiencesSection';
+import AwardsStrip from '@/components/hotel/AwardsStrip';
+import ConciergeButton from '@/components/hotel/ConciergeButton';
 import TestimonialsSection from '@/components/hotel/TestimonialsSection';
 import ContactSection from '@/components/hotel/ContactSection';
 import Footer from '@/components/hotel/Footer';
@@ -66,12 +71,27 @@ function Shell({ children }: { children: React.ReactNode }) {
       <Navbar />
       <main className="flex-1">{children}</main>
       <Footer />
+      <ConciergeButton />
     </div>
   );
 }
 
-export default function HomePage() {
+export default function HomePage({ initialView }: { initialView?: View } = {}) {
+  // Land directly on the view a deep link asked for (/restaurant, /rooms, …).
+  // The store is written before it is first read below, so the very first
+  // paint is already the right page — no home-page flash, no effect.
+  useState(() => {
+    if (initialView) useHotelStore.setState({ view: initialView });
+  });
+
   const { view, setRooms, setGallery, setSettings } = useHotelStore();
+
+  // Keep the address bar honest as the guest moves around, so refresh,
+  // bookmarks and shared links all come back to the same page.
+  useEffect(() => {
+    const path = VIEW_PATHS[view] ?? '/';
+    if (window.location.pathname !== path) window.history.replaceState(null, '', path);
+  }, [view]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -108,10 +128,13 @@ export default function HomePage() {
       <BookingBar />
       <RoomsSection />
       <StoryBand />
+      <DiningSection />
       <AmenitiesSection />
+      <ExperiencesSection />
       <TestimonialsSection />
       <GallerySection />
       <ContactSection />
+      <AwardsStrip />
     </Shell>
   );
 }

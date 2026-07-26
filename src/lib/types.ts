@@ -198,6 +198,24 @@ export interface FoodOrder {
   payments?: Payment[];
 }
 
+export interface TableReservation {
+  id: string;
+  reservationRef: string;
+  guestName: string;
+  guestPhone: string;
+  guestEmail: string | null;
+  partySize: number;
+  /** YYYY-MM-DD as the guest chose it. */
+  date: string;
+  /** HH:MM, 24-hour. */
+  time: string;
+  occasion: string | null;
+  notes: string | null;
+  status: string;
+  internalNotes: string | null;
+  createdAt: string;
+}
+
 export type GatewayId = 'razorpay' | 'icici' | 'payAtHotel' | 'bankTransfer';
 
 export interface PaymentMethodOption {
