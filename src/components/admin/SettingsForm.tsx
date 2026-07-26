@@ -60,7 +60,7 @@ export default function SettingsForm({ section, title, intro, children }: Settin
     }
   }, [toast]);
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch; state settles after the await, not synchronously.
+  // Async fetch; state settles after the await, not synchronously.
   useEffect(() => { load(); }, [load]);
 
   const dirty = Object.keys(values).some((key) => values[key] !== saved[key]);
