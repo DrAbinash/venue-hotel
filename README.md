@@ -1,12 +1,15 @@
-# The Venue — Hotel & Restaurant Platform
+# The Venue — Hotel & Restaurant Platform + Staff ERP
 
 A hotel website with a real booking engine, an in-house restaurant with online
 ordering and table reservations, a delivery-only **cloud kitchen** channel,
-online payments through **Razorpay** and **ICICI Bank Eazypay**, and an admin
-panel that owns every word, price and photograph on the public site.
+online payments through **Razorpay** and **ICICI Bank Eazypay**, an admin
+panel that owns every word, price and photograph on the public site — and a
+full **staff ERP / property-management system** at `/erp` (Staff Login in the
+site header and footer).
 
 Built with Next.js (App Router), Prisma + SQLite, Tailwind and shadcn/ui.
-It runs from a single container with no external database.
+It runs from a single container with no external database — website and ERP
+share one deployment and one backup.
 
 > **Every name, price and photo shipped here is a placeholder.** Nothing is
 > hard-coded in a component — change it all from **Admin → Settings / Website
@@ -45,10 +48,67 @@ the `venue-hotel-data` volume, so one backup captures the whole site.
 | Public site | `src/components/hotel/` |
 | Restaurant ordering | `src/components/restaurant/` |
 | Admin panel | `src/components/admin/` |
+| **Staff ERP (UI)** | `src/components/erp/`, `src/app/erp/` |
+| **Staff ERP (API)** | `src/app/api/erp/` |
+| **ERP domain logic** | `src/lib/erp/` (auth, RBAC, GST, folio, payroll, night audit) |
 | API routes | `src/app/api/` |
 | Editable-content schema | `src/lib/settings-schema.ts` |
 | Pricing (shared client/server) | `src/lib/pricing.ts`, `src/lib/menu.ts` |
 | Payment gateways | `src/lib/payments/` |
+
+---
+
+## Staff ERP (`/erp`)
+
+A role-based property-management system for the whole hotel, built for Indian
+operations. First visit shows a one-time setup screen: enter the website
+`ADMIN_PASSWORD` to create the first ERP administrator, then add staff users
+with roles (Front Office, Housekeeping, F&B, Stores, Accounts, HR,
+Engineering, Manager).
+
+**Front office** — live tape chart (physical rooms × dates), walk-ins,
+check-in with the legal guest register (Aadhaar/PAN/Passport ID capture,
+Form C passport/visa details for foreign nationals), room moves, folios with
+GST-correct postings, settlements in cash/UPI/card/bank, printable
+registration cards, and a **night audit** that posts room charges and rolls
+the business date (IST).
+
+**Billing & GST** — tariff-slab GST for rooms (≤ ₹7,500 → 5%, above → 18%,
+editable), CGST/SGST split, SAC codes per line, financial-year invoice
+numbering (`INV/25-26/00042`), amount-in-words in lakh/crore, round-off,
+printable A4 tax invoices, invoice cancellation with reason, and CSV exports:
+GSTR-1 outward register, invoice register, expense register, police guest
+register (Form F style) and the Form C list for FRRO filing.
+
+**Housekeeping** — room status board (clean/dirty/inspected/OOO), task queue
+with assignment and verification, lost & found register. Checkout dirties the
+room and queues a departure clean automatically.
+
+**Restaurant POS** — live kitchen board on the same order engine as the
+website, staff order entry, settle by cash/UPI/card or **post to room** so the
+bill lands on the guest folio.
+
+**Stores & purchase** — items with HSN/GST, moving-average costing, suppliers
+with GSTIN, purchase orders → GRN receiving, departmental issues, physical
+count adjustments, reorder alerts and a full stock ledger.
+
+**HR & payroll (India)** — employee records with PAN/Aadhaar/UAN/ESI/bank,
+one-tap attendance (unmarked = present; mark the exceptions), leave requests
+and balances, salary advances, and monthly payroll: LOP proration, overtime,
+EPF 12 % (capped basic), ESI 0.75 %/3.25 % under the wage ceiling,
+professional-tax slabs (state-configurable), TDS, advance recovery, printable
+payslips, and the salary bill auto-posted to expenses on finalize.
+
+**Banquets & events** — halls, wedding/conference bookings with per-plate
+pricing, date-clash warnings, advances, and GST invoices.
+
+**Also**: maintenance tickets + asset/AMC register with expiry alerts, guest
+CRM with stay history/VIP/blacklist, occupancy-ADR-RevPAR reports and revenue
+charts, an append-only audit trail, and per-user module permissions.
+
+ERP settings (GSTIN, FSSAI, GST slabs, PT slabs, check-in/out times) live in
+**ERP → Settings**. Set `ERP_SESSION_SECRET` in production so staff sessions
+survive restarts.
 
 ---
 

@@ -19,6 +19,10 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     // React rules
     "react-hooks/exhaustive-deps": "off",
     "react-hooks/purity": "off",
+    // Fetch-on-mount via a reusable load() callback is the app-wide pattern;
+    // state is set from promise continuations, not synchronously.
+    "react-hooks/set-state-in-effect": "off",
+    "react-hooks/static-components": "off",
     "react/no-unescaped-entities": "off",
     "react/display-name": "off",
     "react/prop-types": "off",

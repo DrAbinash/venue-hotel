@@ -1,7 +1,7 @@
 'use client';
 
 import { AnimatePresence, motion } from 'framer-motion';
-import { Menu, Phone, ShoppingBag, X } from 'lucide-react';
+import { KeyRound, Menu, Phone, ShoppingBag, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useHotelStore, type View } from '@/lib/store';
 import { useOrderStore } from '@/lib/order-store';
@@ -73,6 +73,14 @@ export default function Navbar() {
               >
                 My Booking
               </button>
+              <a
+                href="/erp"
+                className="flex items-center gap-1.5 text-xs tracking-widest uppercase text-charcoal/50 hover:text-gold transition-colors"
+                title="Staff login — hotel ERP"
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                Staff
+              </a>
               {cartCount > 0 && (
                 <button
                   onClick={() => go('restaurant')}
@@ -135,6 +143,12 @@ export default function Navbar() {
                   {link.label}
                 </button>
               ))}
+              <a
+                href="/erp"
+                className="block w-full text-left py-3 px-4 text-sm tracking-widest uppercase text-charcoal/50 hover:text-gold hover:bg-cream/50 transition-all"
+              >
+                Staff Login
+              </a>
               <Button
                 onClick={() => go('booking')}
                 className="w-full mt-3 bg-gold text-white hover:bg-gold-dark tracking-widest uppercase text-xs py-3 rounded-none"

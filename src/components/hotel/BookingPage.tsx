@@ -66,7 +66,6 @@ export default function BookingPage() {
 
   // Re-run whenever the stay parameters change, not on every render. The
   // results arrive after an await, so this is not a synchronous state cascade.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { checkAvailability(); },
     [bookingForm.checkIn, bookingForm.checkOut, bookingForm.adults, bookingForm.children]);
 
