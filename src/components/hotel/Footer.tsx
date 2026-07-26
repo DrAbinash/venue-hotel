@@ -137,12 +137,20 @@ export default function Footer() {
           <p className="text-xs text-white/30">
             &copy; {year} {text(settings, 'copyrightName')}. All rights reserved.
           </p>
-          <Link
-            href="/admin"
-            className="text-[10px] text-white/20 hover:text-white/40 tracking-widest uppercase transition-colors"
-          >
-            Admin Panel
-          </Link>
+          <span className="flex items-center gap-4">
+            <Link
+              href="/erp"
+              className="text-[10px] text-white/20 hover:text-white/40 tracking-widest uppercase transition-colors"
+            >
+              Staff Login
+            </Link>
+            <Link
+              href="/admin"
+              className="text-[10px] text-white/20 hover:text-white/40 tracking-widest uppercase transition-colors"
+            >
+              Admin Panel
+            </Link>
+          </span>
         </div>
       </div>
     </footer>

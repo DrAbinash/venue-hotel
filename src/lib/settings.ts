@@ -40,6 +40,8 @@ export function toPublicSettings(settings: SettingsMap): SettingsMap {
   const out: SettingsMap = {};
   for (const [key, value] of Object.entries(settings)) {
     if (PRIVATE_KEYS.has(key)) continue;
+    // ERP configuration (GSTIN, payroll slabs, …) stays off the website payload.
+    if (key.startsWith('erp')) continue;
     out[key] = value;
   }
   // The Razorpay key id is public by design — the checkout widget needs it.

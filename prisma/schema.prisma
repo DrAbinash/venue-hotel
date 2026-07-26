@@ -53,6 +53,7 @@ model Room {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   bookings      Booking[]
+  units         RoomUnit[]
 }
 
 model Booking {
@@ -92,6 +93,11 @@ model Booking {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   payments        Payment[]
+  /// Physical room allocated by the front desk (ERP).
+  unitId          String?
+  unit            RoomUnit? @relation(fields: [unitId], references: [id])
+  regCard         RegCard?
+  folio           Folio?
 
   @@index([checkIn, checkOut])
   @@index([status])
@@ -276,4 +282,625 @@ model GalleryImage {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ===========================================================================
+//  ERP — staff, front office, housekeeping, stores, HR, finance, banquets.
+//  Everything below is additive: the public website never reads these tables.
+// ===========================================================================
+
+model StaffUser {
+  id           String    @id @default(cuid())
+  username     String    @unique
+  name         String
+  email        String?
+  phone        String?
+  /// ADMIN | MANAGER | FRONTDESK | HOUSEKEEPING | FNB | STORES | ACCOUNTS | HR | MAINTENANCE
+  role         String    @default("FRONTDESK")
+  /// JSON array of module keys granted beyond the role preset; [] = preset only.
+  permissions  String    @default("[]")
+  passwordHash String
+  isActive     Boolean   @default(true)
+  mustChangePassword Boolean @default(false)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  username  String
+  /// dotted verb, e.g. "frontdesk.checkin", "folio.payment"
+  action    String
+  entity    String?
+  entityId  String?
+  summary   String
+  meta      String   @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+}
+
+/// A physical, numbered room. The website sells room *types* (Room, with a
+/// quantity); the front desk allocates one of these units at check-in.
+model RoomUnit {
+  id         String    @id @default(cuid())
+  roomId     String
+  room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  unitNumber String    @unique
+  /// clean | dirty | inspected | out_of_order | out_of_service
+  hkStatus   String    @default("clean")
+  hkNotes    String?
+  isActive   Boolean   @default(true)
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  bookings   Booking[]
+  hkTasks    HkTask[]
+
+  @@index([roomId])
+}
+
+/// Guest registration card captured at check-in — the legal hotel register in
+/// India (ID proof for residents, passport/visa details feeding Form C for
+/// foreign nationals).
+model RegCard {
+  id                 String   @id @default(cuid())
+  bookingId          String   @unique
+  booking            Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  guestName          String
+  nationality        String   @default("Indian")
+  /// aadhaar | pan | passport | voter_id | driving_licence | other
+  idType             String   @default("aadhaar")
+  idNumber           String   @default("")
+  address            String?
+  city               String?
+  state              String?
+  pincode            String?
+  arrivalFrom        String?
+  nextDestination    String?
+  purposeOfVisit     String   @default("Leisure")
+  vehicleNo          String?
+  companions         String   @default("[]")
+  isForeigner        Boolean  @default(false)
+  passportNo         String?
+  passportIssuePlace String?
+  passportIssueDate  String?
+  passportExpiry     String?
+  visaNo             String?
+  visaType           String?
+  visaIssueDate      String?
+  visaExpiry         String?
+  arrivedFromCountry String?
+  arrivalDateInIndia String?
+  /// FRRO acknowledgement number once Form C is filed on indianfrro.gov.in
+  formCRef           String?
+  checkedInBy        String
+  checkedInAt        DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// One running bill per stay (or banquet event). Charges, taxes and payments
+/// are lines; the balance is always derived, never stored.
+model Folio {
+  id        String       @id @default(cuid())
+  folioNo   String       @unique
+  bookingId String?      @unique
+  booking   Booking?     @relation(fields: [bookingId], references: [id])
+  banquetId String?      @unique
+  banquet   BanquetBooking? @relation(fields: [banquetId], references: [id])
+  guestName String
+  /// open | settled | void
+  status    String       @default("open")
+  openedAt  DateTime     @default(now())
+  closedAt  DateTime?
+  notes     String?
+  lines     FolioLine[]
+  invoices  TaxInvoice[]
+}
+
+model FolioLine {
+  id          String   @id @default(cuid())
+  folioId     String
+  folio       Folio    @relation(fields: [folioId], references: [id], onDelete: Cascade)
+  /// Business date the charge belongs to (IST), YYYY-MM-DD.
+  date        String
+  /// room | fnb | banquet | laundry | minibar | spa | transport | misc |
+  /// discount | payment | refund
+  type        String
+  description String
+  reference   String?
+  hsnSac      String?
+  qty         Float    @default(1)
+  unitAmount  Float    @default(0)
+  /// Taxable value. Negative for discounts; payments carry amount<0, no tax.
+  amount      Float
+  gstRate     Float    @default(0)
+  cgst        Float    @default(0)
+  sgst        Float    @default(0)
+  igst        Float    @default(0)
+  total       Float
+  /// For payment lines: cash | upi | card | bank | cheque | gateway
+  payMode     String?
+  isVoid      Boolean  @default(false)
+  voidReason  String?
+  postedBy    String
+  createdAt   DateTime @default(now())
+
+  @@index([folioId])
+  @@index([date])
+}
+
+/// GST tax invoice. Lines are snapshotted as JSON so a later menu or rate
+/// edit can never rewrite an issued invoice.
+model TaxInvoice {
+  id            String   @id @default(cuid())
+  invoiceNo     String   @unique
+  fy            String
+  folioId       String?
+  folio         Folio?   @relation(fields: [folioId], references: [id])
+  orderId       String?
+  /// folio | pos | banquet
+  source        String   @default("folio")
+  buyerName     String
+  buyerGstin    String?
+  buyerAddress  String?
+  placeOfSupply String?
+  lines         String
+  taxable       Float
+  cgst          Float
+  sgst          Float
+  igst          Float    @default(0)
+  roundOff      Float    @default(0)
+  total         Float
+  amountInWords String
+  irn           String?
+  /// issued | cancelled
+  status        String   @default("issued")
+  cancelReason  String?
+  issuedBy      String
+  issuedAt      DateTime @default(now())
+
+  @@index([issuedAt])
+  @@index([status])
+}
+
+model HkTask {
+  id          String    @id @default(cuid())
+  unitId      String?
+  unit        RoomUnit? @relation(fields: [unitId], references: [id])
+  /// Free-text location for public areas when no room unit applies.
+  area        String?
+  /// cleaning | turndown | deep_clean | inspection | linen | minibar | other
+  type        String    @default("cleaning")
+  notes       String?
+  assignedTo  String?
+  /// open | in_progress | done | verified
+  status      String    @default("open")
+  /// low | normal | high | urgent
+  priority    String    @default("normal")
+  dueAt       DateTime?
+  completedAt DateTime?
+  createdBy   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model LostFound {
+  id           String    @id @default(cuid())
+  item         String
+  description  String?
+  foundAt      String?
+  foundOn      DateTime  @default(now())
+  foundBy      String?
+  /// stored | returned | disposed
+  status       String    @default("stored")
+  guestName    String?
+  guestContact String?
+  returnedOn   DateTime?
+  notes        String?
+}
+
+model Asset {
+  id             String              @id @default(cuid())
+  name           String
+  /// hvac | electrical | plumbing | kitchen | it | furniture | vehicle | fire_safety | general
+  category       String              @default("general")
+  location       String?
+  serialNo       String?
+  purchaseDate   String?
+  purchaseCost   Float               @default(0)
+  amcVendor      String?
+  amcExpiry      String?
+  warrantyExpiry String?
+  /// working | attention | down | retired
+  status         String              @default("working")
+  notes          String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  tickets        MaintenanceTicket[]
+}
+
+model MaintenanceTicket {
+  id         String    @id @default(cuid())
+  ticketNo   String    @unique
+  title      String
+  details    String?
+  location   String?
+  assetId    String?
+  asset      Asset?    @relation(fields: [assetId], references: [id])
+  category   String    @default("general")
+  /// low | normal | high | urgent
+  priority   String    @default("normal")
+  /// open | in_progress | on_hold | resolved | closed
+  status     String    @default("open")
+  reportedBy String
+  assignedTo String?
+  cost       Float     @default(0)
+  resolvedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([status])
+}
+
+model Supplier {
+  id              String          @id @default(cuid())
+  name            String
+  contactPerson   String?
+  phone           String?
+  email           String?
+  address         String?
+  gstin           String?
+  state           String?
+  paymentTermDays Int             @default(0)
+  isActive        Boolean         @default(true)
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  purchaseOrders  PurchaseOrder[]
+}
+
+model InventoryItem {
+  id           String              @id @default(cuid())
+  code         String              @unique
+  name         String
+  /// food | beverage | housekeeping | linen | engineering | stationery | minibar | general
+  category     String              @default("general")
+  unit         String              @default("pcs")
+  hsn          String?
+  gstRate      Float               @default(0)
+  currentStock Float               @default(0)
+  reorderLevel Float               @default(0)
+  /// Moving-average cost, updated on every goods receipt.
+  avgCost      Float               @default(0)
+  lastCost     Float               @default(0)
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  ledger       StockLedger[]
+  poLines      PurchaseOrderLine[]
+}
+
+model PurchaseOrder {
+  id           String              @id @default(cuid())
+  poNo         String              @unique
+  supplierId   String
+  supplier     Supplier            @relation(fields: [supplierId], references: [id])
+  /// draft | ordered | partial | received | cancelled
+  status       String              @default("draft")
+  orderDate    DateTime            @default(now())
+  expectedDate String?
+  notes        String?
+  subtotal     Float               @default(0)
+  taxTotal     Float               @default(0)
+  total        Float               @default(0)
+  invoiceNo    String?
+  invoiceDate  String?
+  createdBy    String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  lines        PurchaseOrderLine[]
+}
+
+model PurchaseOrderLine {
+  id          String        @id @default(cuid())
+  poId        String
+  po          PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  itemId      String
+  item        InventoryItem @relation(fields: [itemId], references: [id])
+  qty         Float
+  receivedQty Float         @default(0)
+  unitCost    Float
+  gstRate     Float         @default(0)
+  lineTotal   Float         @default(0)
+}
+
+/// Every stock movement, signed. currentStock on the item is a cache of the
+/// running balance and is written in the same transaction as the ledger row.
+model StockLedger {
+  id           String        @id @default(cuid())
+  itemId       String
+  item         InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  /// grn | issue | adjustment | return | opening
+  type         String
+  qty          Float
+  unitCost     Float         @default(0)
+  reference    String?
+  department   String?
+  notes        String?
+  balanceAfter Float         @default(0)
+  createdBy    String
+  createdAt    DateTime      @default(now())
+
+  @@index([itemId, createdAt])
+}
+
+model Employee {
+  id              String            @id @default(cuid())
+  empCode         String            @unique
+  name            String
+  designation     String?
+  /// front_office | housekeeping | fnb_service | kitchen | maintenance |
+  /// accounts | hr | security | stores | management | spa
+  department      String            @default("front_office")
+  phone           String?
+  email           String?
+  address         String?
+  dob             String?
+  doj             String?
+  dol             String?
+  /// active | resigned | terminated
+  status          String            @default("active")
+  pan             String?
+  aadhaar         String?
+  uan             String?
+  pfNumber        String?
+  esiNumber       String?
+  bankName        String?
+  bankAccount     String?
+  bankIfsc        String?
+  basic           Float             @default(0)
+  hra             Float             @default(0)
+  otherAllowances Float             @default(0)
+  pfOptIn         Boolean           @default(true)
+  esiOptIn        Boolean           @default(true)
+  ptApplicable    Boolean           @default(true)
+  tdsMonthly      Float             @default(0)
+  weeklyOff       String            @default("monday")
+  /// morning | evening | night | general
+  shift           String            @default("general")
+  leaveBalance    Float             @default(12)
+  photoUrl        String?
+  notes           String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  attendance      AttendanceEntry[]
+  leaves          LeaveRequest[]
+  payslips        Payslip[]
+  advances        SalaryAdvance[]
+}
+
+model SalaryAdvance {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  amount     Float
+  reason     String?
+  date       DateTime @default(now())
+  recovered  Float    @default(0)
+  /// open | recovered
+  status     String   @default("open")
+  approvedBy String
+}
+
+model AttendanceEntry {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  /// YYYY-MM-DD (IST)
+  date       String
+  /// present | absent | half_day | leave | week_off | holiday
+  status     String   @default("present")
+  inTime     String?
+  outTime    String?
+  otHours    Float    @default(0)
+  notes      String?
+  markedBy   String
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+model LeaveRequest {
+  id         String    @id @default(cuid())
+  employeeId String
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  from       String
+  to         String
+  days       Float
+  /// casual | sick | earned | unpaid
+  type       String    @default("casual")
+  reason     String?
+  /// pending | approved | rejected | cancelled
+  status     String    @default("pending")
+  decidedBy  String?
+  decidedAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model PayrollRun {
+  id              String    @id @default(cuid())
+  /// YYYY-MM
+  month           String    @unique
+  /// draft | finalized
+  status          String    @default("draft")
+  totalGross      Float     @default(0)
+  totalDeductions Float     @default(0)
+  totalNet        Float     @default(0)
+  employerPf      Float     @default(0)
+  employerEsi     Float     @default(0)
+  finalizedBy     String?
+  finalizedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  payslips        Payslip[]
+}
+
+model Payslip {
+  id              String     @id @default(cuid())
+  runId           String
+  run             PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  employeeId      String
+  employee        Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month           String
+  monthDays       Float
+  payableDays     Float
+  lopDays         Float      @default(0)
+  basic           Float
+  hra             Float
+  otherAllowances Float
+  otPay           Float      @default(0)
+  grossEarned     Float
+  pfEmployee      Float      @default(0)
+  pfEmployer      Float      @default(0)
+  esiEmployee     Float      @default(0)
+  esiEmployer     Float      @default(0)
+  pt              Float      @default(0)
+  tds             Float      @default(0)
+  advanceRecovery Float      @default(0)
+  otherDeductions Float      @default(0)
+  totalDeductions Float
+  netPay          Float
+  paidOn          DateTime?
+  paymentRef      String?
+
+  @@unique([runId, employeeId])
+}
+
+model BanquetHall {
+  id               String           @id @default(cuid())
+  name             String
+  capacitySeating  Int              @default(0)
+  capacityFloating Int              @default(0)
+  area             String?
+  baseRent         Float            @default(0)
+  isActive         Boolean          @default(true)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  bookings         BanquetBooking[]
+}
+
+model BanquetBooking {
+  id               String      @id @default(cuid())
+  eventRef         String      @unique
+  hallId           String
+  hall             BanquetHall @relation(fields: [hallId], references: [id])
+  /// YYYY-MM-DD
+  eventDate        String
+  startTime        String      @default("18:00")
+  endTime          String      @default("23:00")
+  /// wedding | reception | conference | birthday | corporate | other
+  eventType        String      @default("wedding")
+  customerName     String
+  customerPhone    String
+  customerEmail    String?
+  customerGstin    String?
+  customerAddress  String?
+  pax              Int         @default(100)
+  ratePerPlate     Float       @default(0)
+  hallRent         Float       @default(0)
+  decorationAmount Float       @default(0)
+  otherCharges     Float       @default(0)
+  discountAmount   Float       @default(0)
+  gstRate          Float       @default(5)
+  menuNotes        String?
+  notes            String?
+  /// enquiry | tentative | confirmed | completed | cancelled
+  status           String      @default("enquiry")
+  advancePaid      Float       @default(0)
+  /// JSON [{date, amount, mode, ref}]
+  payments         String      @default("[]")
+  totalAmount      Float       @default(0)
+  createdBy        String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  folio            Folio?
+
+  @@index([eventDate])
+}
+
+model Expense {
+  id            String   @id @default(cuid())
+  voucherNo     String   @unique
+  date          String
+  /// utilities | salaries | maintenance | purchases | fuel | marketing |
+  /// licenses | rent | commissions | other
+  category      String   @default("other")
+  payee         String
+  description   String?
+  amount        Float
+  gstAmount     Float    @default(0)
+  tdsAmount     Float    @default(0)
+  /// cash | upi | bank | card | cheque
+  mode          String   @default("cash")
+  reference     String?
+  supplierGstin String?
+  billNo        String?
+  department    String?
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([date])
+}
+
+/// Financial-year document number sequences, e.g. key "INV:2025-26".
+model DocCounter {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Int    @default(0)
+}
+
+model NightAuditRun {
+  id            String   @id @default(cuid())
+  /// The business date that was closed, YYYY-MM-DD.
+  businessDate  String   @unique
+  roomsOccupied Int      @default(0)
+  roomCharges   Float    @default(0)
+  noShows       Int      @default(0)
+  notes         String?
+  runBy         String
+  createdAt     DateTime @default(now())
+}
+
+/// One row per unique guest (keyed on email, falling back to phone), built
+/// automatically from bookings and enriched by the front desk.
+model GuestProfile {
+  id              String    @id @default(cuid())
+  profileKey      String    @unique
+  name            String
+  email           String?
+  phone           String?
+  nationality     String?
+  company         String?
+  gstin           String?
+  address         String?
+  dob             String?
+  anniversary     String?
+  preferences     String?
+  tags            String    @default("[]")
+  isVip           Boolean   @default(false)
+  isBlacklisted   Boolean   @default(false)
+  blacklistReason String?
+  totalStays      Int       @default(0)
+  totalSpend      Float     @default(0)
+  lastStay        DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
