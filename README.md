@@ -2,10 +2,10 @@
 
 A hotel website with a real booking engine, an in-house restaurant with online
 ordering and table reservations, a delivery-only **cloud kitchen** channel,
-online payments through **Razorpay** and **ICICI Bank Eazypay**, an admin
-panel that owns every word, price and photograph on the public site — and a
-full **staff ERP / property-management system** at `/erp` (Staff Login in the
-site header and footer).
+online payments through **Razorpay** and **ICICI Bank Eazypay**, an admin panel
+that owns every word, price and photograph on the public site — and a full
+**staff ERP / property-management system** at `/erp` (Staff Login in the site
+header and footer).
 
 Built with Next.js (App Router), Prisma + SQLite, Tailwind and shadcn/ui.
 It runs from a single container with no external database — website and ERP
@@ -212,6 +212,10 @@ a manual entry can all report the same payment and the balance moves once.
 
 - The admin panel is behind a password (`ADMIN_PASSWORD`) with signed,
   HTTP-only session cookies. Set `SECURE_COOKIES=true` when serving over HTTPS.
+- The staff ERP has its own accounts: scrypt-hashed passwords, a separate
+  signed session cookie, and a per-module permission check on every endpoint,
+  so a module a user cannot see is one their requests cannot reach either.
+  ERP settings are kept out of the public settings payload.
 - Reservations, food orders, uploads, the media library and all mutating
   endpoints require that session. Guest contact details are never public.
 - Gateway secrets never leave the server: the public settings endpoint omits
